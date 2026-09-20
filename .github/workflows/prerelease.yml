@@ -1,0 +1,96 @@
+name: Pre-Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version override, e.g. 0.0.4-rc.1. Empty = derive it from the selected branch via GitVersion."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  prerelease:
+    name: Build & pre-release (Windows x64/x86)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (full history for GitVersion)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Apply version override (optional)
+        if: github.event.inputs.version != ''
+        shell: pwsh
+        run: git tag -f "v${{ github.event.inputs.version }}"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install WiX toolset + extensions
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+          wix eula accept wix7
+          wix extension add -g WixToolset.UI.wixext
+          wix extension add -g WixToolset.Util.wixext
+
+      - name: Build x86 (Hook32 + Helper32)
+        shell: pwsh
+        run: |
+          cmake -S . -B build/cmake/x86 -A Win32
+          cmake --build build/cmake/x86 --config Release
+
+      - name: Build x64 (Host + MUI + Hook64)
+        shell: pwsh
+        run: |
+          cmake -S . -B build/cmake/x64 -A x64
+          cmake --build build/cmake/x64 --config Release
+
+      - name: Package ZIP + MSI
+        shell: pwsh
+        run: ./build.ps1 -PackageOnly
+
+      - name: Integration tests (non-blocking)
+        continue-on-error: true
+        shell: pwsh
+        run: dotnet test tests/DeGhoster.Tests/DeGhoster.Tests.csproj -c Release --nologo --filter "Category!=InteractiveInput" --disable-build-servers
+
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = Get-Content build/version.json | ConvertFrom-Json
+          $tag = 'v' + (($v.fullSemVer -replace '[+]', '.') -replace '[^A-Za-z0-9._-]', '-')
+          "fullSemVer=$($v.fullSemVer)" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Create / update the pre-release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = '${{ steps.ver.outputs.tag }}'
+          $ver = '${{ steps.ver.outputs.fullSemVer }}'
+          $assets = Get-ChildItem dist/*.zip, dist/*.msi | ForEach-Object FullName
+          if (-not $assets) { throw "No dist artifacts found to attach." }
+          $title = "$ver (pre-release)"
+          $notes = "Automated pre-release built from branch '$env:GITHUB_REF_NAME' at commit $env:GITHUB_SHA."
+          $json = gh release view $tag --json isPrerelease 2>$null
+          if ($LASTEXITCODE -eq 0 -and $json) {
+              $rel = $json | ConvertFrom-Json
+              if (-not $rel.isPrerelease) {
+                  throw "Release $tag already exists and is NOT a pre-release - refusing to overwrite a published release."
+              }
+              gh release edit $tag --prerelease --target $env:GITHUB_SHA --title $title --notes $notes
+              gh release upload $tag $assets --clobber
+          } else {
+              gh release create $tag $assets --prerelease --target $env:GITHUB_SHA --title $title --notes $notes
+          }
+          Write-Host "Pre-release $tag published with: $($assets -join ', ')"
