@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x06, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "Spøgelse"
+    IDS_GHOST_PLURAL    "Spøgelser"
+    IDS_MENU_STATUS     "Statusvindue"
+    IDS_MENU_ACTIVE     "Aktiv"
+    IDS_MENU_INACTIVE   "Inaktiv"
+    IDS_MENU_NOWINDOWS  "(ingen vinduer fundet)"
+    IDS_MENU_INFO       "Om…"
+    IDS_MENU_QUIT       "Afslut"
+    IDS_UNTITLED        "(uden titel)"
+    IDS_INFO_TITLE      "Om DeGhoster"
+    IDS_INFO_DESC       "Neutraliserer usynlige WebView2/Chromium-spøgelsesvinduer, der opfanger dine klik på skrivebordet."
+    IDS_INFO_LICENSE    "Licens: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "Hvis du finder dette projekt nyttigt, så overvej at støtte det:"
+    IDS_INFO_THIRDPARTY "Tredjepartsmeddelelser / licens"
+END

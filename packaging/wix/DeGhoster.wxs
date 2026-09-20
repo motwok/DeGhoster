@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) Emmo Emminghaus. SPDX-License-Identifier: AGPL-3.0-or-later
+
+  DeGhoster MSI. Dual-scope (per-user OR per-machine, chosen in the setup via
+  WixUI_Advanced's InstallScopeDlg) with per-language feature selection
+  (FeaturesDlg). The autostart entry is ALWAYS written per-user to
+  HKCU\...\CurrentVersion\Run - never to the machine-wide HKLM Run key:
+    * per-user install  = a HKCU RegistryValue component (self-cleaning)
+    * per-machine install = Active Setup runs DeGhoster.exe with the
+                            register-autostart switch once per user at logon, so
+                            each user gets their own HKCU entry.
+
+  Preprocessor variables (passed by packaging/build-msi.ps1 via -d):
+    Version         MSI ProductVersion  (major.minor.patch, e.g. 0.0.1)
+    VersionCsv      Active Setup version (comma form, e.g. 0,0,1,4)
+    ProductVersion4 Informational full version string (ARP "Comments")
+    StageDir        directory holding the staged payload
+    ProjectUrl      publisher / support URL (ARP "URL info about")
+    AssetsDir       directory holding app.ico
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <?define UpgradeCode = "9BDD1D1B-A3EF-4D52-8925-10602B6A35CF" ?>
+  <?define ActiveSetupGuid = "6B1D2216-237E-4E6F-A723-121A27A1A339" ?>
+
+  <Package Name="DeGhoster"
+           Manufacturer="Emmo Emminghaus"
+           Version="$(var.Version)"
+           UpgradeCode="$(var.UpgradeCode)"
+           Scope="perUserOrMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="DeGhoster - invisible ghost-window neutralizer"
+                        Manufacturer="Emmo Emminghaus" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of DeGhoster is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Add/Remove Programs metadata. -->
+    <Icon Id="DeGhosterIcon" SourceFile="$(var.AssetsDir)\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="DeGhosterIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="$(var.ProjectUrl)" />
+    <Property Id="ARPHELPLINK" Value="$(var.ProjectUrl)" />
+    <Property Id="ARPCOMMENTS" Value="Version $(var.ProductVersion4)" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <!-- WixUI_Advanced configuration: default to per-user (this is a per-user
+         tray tool); the user can switch to "all users" in the InstallScopeDlg. -->
+    <Property Id="ApplicationFolderName" Value="DeGhoster" />
+    <Property Id="WixAppFolder" Value="WixPerUserFolder" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.StageDir)\License.rtf" />
+
+    <ui:WixUI Id="WixUI_Advanced" />
+
+    <!-- "Launch DeGhoster" checkbox on the final setup page (ticked by default).
+         WixShellExec (Util extension) starts the app impersonated, without
+         waiting, only on a fresh install. -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch DeGhoster" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WixShellExecTarget" Value="[#fil_DeGhosterExe]" />
+    <CustomAction Id="LaunchApplication" BinaryRef="Wix4UtilCA_X86"
+                  DllEntry="WixShellExec" Impersonate="yes" Return="ignore" />
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction"
+               Value="LaunchApplication"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+    </UI>
+
+    <!-- Features -->
+    <Feature Id="Core" Title="DeGhoster (required)" Level="1"
+             AllowAbsent="no" Display="expand"
+             Description="The DeGhoster program files (English UI, always installed).">
+      <ComponentGroupRef Id="CoreComponents" />
+      <ComponentGroupRef Id="CoreLangComponents" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="AutostartPerUser" />
+      <ComponentRef Id="AutostartActiveSetup" />
+    </Feature>
+
+    <Feature Id="Languages" Title="Additional languages" Level="1" Display="expand"
+             Description="Extra UI languages. Windows automatically shows the one matching your user UI language; English is the fallback.">
+      <FeatureGroupRef Id="LanguageFeatures" />
+    </Feature>
+
+  </Package>
+
+  <!-- Install directory: ProgramFiles for per-machine; WixUI_Advanced's type-51
+       custom actions redirect APPLICATIONFOLDER to %LocalAppData%\Apps for a
+       per-user install. -->
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="APPLICATIONFOLDER" Name="!(bind.Property.ApplicationFolderName)" />
+    </StandardDirectory>
+  </Fragment>
+
+  <!-- Core program files. -->
+  <Fragment>
+    <ComponentGroup Id="CoreComponents" Directory="APPLICATIONFOLDER">
+      <Component Id="cmp_exe">
+        <File Id="fil_DeGhosterExe" Source="$(var.StageDir)\DeGhoster.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_hook64">
+        <File Source="$(var.StageDir)\DeGhoster.Hook64.dll" />
+      </Component>
+      <Component Id="cmp_hook32">
+        <File Source="$(var.StageDir)\DeGhoster.Hook32.dll" />
+      </Component>
+      <Component Id="cmp_helper32">
+        <File Source="$(var.StageDir)\DeGhoster.Helper32.exe" />
+      </Component>
+      <Component Id="cmp_license">
+        <File Source="$(var.StageDir)\LICENSE.txt" />
+      </Component>
+      <Component Id="cmp_notice">
+        <File Source="$(var.StageDir)\NOTICE.txt" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <!-- Start Menu shortcut. ProgramMenuFolder resolves to the user's Programs
+       menu for a per-user install and the all-users menu for a per-machine
+       install; the HKCU keypath keeps the component per-user-friendly. -->
+  <Fragment>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder"
+               Guid="0CE34FA3-2A36-4AAC-B32E-0426F8F2FAFB">
+      <Shortcut Id="sc_DeGhoster" Name="DeGhoster"
+                Description="Neutralizes invisible click-eating ghost windows"
+                Target="[#fil_DeGhosterExe]"
+                WorkingDirectory="APPLICATIONFOLDER"
+                Icon="DeGhosterIcon" />
+      <RegistryValue Root="HKCU" Key="Software\DeGhoster"
+                     Name="StartMenuShortcut" Type="integer" Value="1"
+                     KeyPath="yes" />
+    </Component>
+  </Fragment>
+
+  <!-- Autostart: always per-user (HKCU Run), never machine-wide. -->
+  <Fragment>
+    <!-- Per-user install: write the current user's Run entry directly. -->
+    <Component Id="AutostartPerUser" Directory="APPLICATIONFOLDER"
+               Guid="401D7C3B-BD98-48F6-BA4C-FA08471338DE"
+               Condition="NOT ALLUSERS">
+      <RegistryValue Root="HKCU"
+                     Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                     Name="DeGhoster" Type="string"
+                     Value="&quot;[#fil_DeGhosterExe]&quot;" KeyPath="yes" />
+    </Component>
+
+    <!-- Per-machine install: Active Setup runs the per-user registration for
+         every user at logon (StubPath calls the app, which writes HKCU Run). -->
+    <Component Id="AutostartActiveSetup" Directory="APPLICATIONFOLDER"
+               Condition="ALLUSERS">
+      <RegistryKey Root="HKLM"
+                   Key="Software\Microsoft\Active Setup\Installed Components\$(var.ActiveSetupGuid)">
+        <RegistryValue Type="string" Value="DeGhoster Autostart" KeyPath="yes" />
+        <RegistryValue Type="string" Name="StubPath"
+                       Value="&quot;[#fil_DeGhosterExe]&quot; --register-autostart" />
+        <RegistryValue Type="string" Name="Version" Value="$(var.VersionCsv)" />
+        <RegistryValue Type="integer" Name="IsInstalled" Value="1" />
+      </RegistryKey>
+    </Component>
+  </Fragment>
+
+</Wix>

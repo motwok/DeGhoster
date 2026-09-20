@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x01, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "شبح"
+    IDS_GHOST_PLURAL    "أشباح"
+    IDS_MENU_STATUS     "نافذة الحالة"
+    IDS_MENU_ACTIVE     "مُفعّل"
+    IDS_MENU_INACTIVE   "مُعطّل"
+    IDS_MENU_NOWINDOWS  "(لم يتم اكتشاف نوافذ)"
+    IDS_MENU_INFO       "حول…"
+    IDS_MENU_QUIT       "خروج"
+    IDS_UNTITLED        "(بدون عنوان)"
+    IDS_INFO_TITLE      "حول DeGhoster"
+    IDS_INFO_DESC       "يُحيّد نوافذ WebView2/Chromium الشبحية غير المرئية التي تعترض نقرات سطح المكتب."
+    IDS_INFO_LICENSE    "الترخيص: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "إذا وجدت هذا المشروع مفيدًا، ففكّر في دعمه:"
+    IDS_INFO_THIRDPARTY "إشعارات الأطراف الثالثة / الترخيص"
+END

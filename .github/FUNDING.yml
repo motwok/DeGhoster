@@ -1,0 +1,3 @@
+# Shows a "Sponsor" button on the repository linking to the funding platform(s).
+# Only Ko-fi for now; GitHub Sponsors can be added later as:  github: [motwok]
+ko_fi: motwok

@@ -1,0 +1,97 @@
+name: 🐞 Bug report
+description: Report something that doesn't work as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill in the fields below —
+        the details make it much easier to reproduce and fix.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: This is **not** a security vulnerability (those go through [SECURITY.md](https://github.com/motwok/DeGhoster/security/advisories/new), not a public issue).
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+      placeholder: Clicks in an area did nothing / the cursor vanished / ...
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: symptoms
+    attributes:
+      label: Symptoms
+      description: Which did you observe?
+      options:
+        - label: Clicks were swallowed (a screen area ignored my clicks)
+        - label: The mouse cursor disappeared over an area
+        - label: DeGhoster acted on a window it shouldn't have (false positive)
+        - label: Other (describe above)
+
+  - type: input
+    id: offending-app
+    attributes:
+      label: Which app left the ghost window?
+      description: The desktop app whose leftover window caused it.
+      placeholder: e.g. WhatsApp, Microsoft Teams
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-type
+    attributes:
+      label: How did you install DeGhoster?
+      options:
+        - MSI — just me (per-user)
+        - MSI — everyone / Global (per-machine)
+        - Portable ZIP
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: DeGhoster version
+      description: See the file's Properties → Details, or the About dialog.
+      placeholder: e.g. 1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      placeholder: e.g. Windows 11 23H2 (64-bit)
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Even rough steps help. Include the virtual-desktop switch if relevant.
+      placeholder: |
+        1. Open <app>
+        2. Move it to another virtual desktop
+        3. Click the desktop where the window was — nothing happens
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Screenshots, notes, anything else. (You can paste images here.)
+    validations:
+      required: false

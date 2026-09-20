@@ -1,0 +1,62 @@
+# Release Drafter configuration (https://github.com/release-drafter/release-drafter).
+#
+# On every merge into master the draft release notes are rebuilt from the merged
+# pull requests, grouped by label. Publishing the draft creates the tag
+# v$RESOLVED_VERSION, which GitVersion then uses to stamp the binaries and name
+# the artifacts (see docs/adr/0008 and docs/adr/0009).
+#
+# Labels the autolabeler applies must exist in the repo. Create these once
+# (Settings -> Labels), or apply labels manually on each PR:
+#   feature, fix, docs, chore, breaking, skip-changelog
+
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+categories:
+  - title: '🚀 Features'
+    labels: ['feature', 'enhancement']
+  - title: '🐞 Bug Fixes'
+    labels: ['fix', 'bug']
+  - title: '📖 Documentation'
+    labels: ['docs', 'documentation']
+  - title: '🧰 Maintenance'
+    labels: ['chore', 'refactor', 'build', 'ci', 'dependencies']
+
+change-template: '- $TITLE (#$NUMBER)'
+change-title-escapes: '\<*_&'   # keep titles from breaking Markdown/mentions
+exclude-labels:
+  - 'skip-changelog'
+
+# Next version is derived from PR labels (Semantic Versioning).
+version-resolver:
+  major:
+    labels: ['major', 'breaking']
+  minor:
+    labels: ['minor', 'feature', 'enhancement']
+  patch:
+    labels: ['patch', 'fix', 'bug', 'docs', 'documentation', 'chore', 'refactor', 'build', 'ci']
+  default: patch
+
+template: |
+  ## What's changed in $RESOLVED_VERSION
+
+  $CHANGES
+
+  **Full changelog:** https://github.com/motwok/DeGhoster/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+# Auto-apply labels from Conventional-Commit-style PR titles / branch names.
+autolabeler:
+  - label: 'feature'
+    title: ['/^feat(\(.+\))?!?:/i', '/^feature/i']
+    branch: ['/^feat(ure)?\//i']
+  - label: 'fix'
+    title: ['/^fix(\(.+\))?!?:/i']
+    branch: ['/^fix\//i']
+  - label: 'docs'
+    title: ['/^docs(\(.+\))?:/i']
+    branch: ['/^docs\//i']
+  - label: 'chore'
+    title: ['/^(chore|build|ci|refactor|perf|style|test)(\(.+\))?:/i']
+    branch: ['/^(chore|build|ci|refactor)\//i']
+  - label: 'breaking'
+    title: ['/!:/', '/breaking[- ]change/i']

@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x08, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "Φάντασμα"
+    IDS_GHOST_PLURAL    "Φαντάσματα"
+    IDS_MENU_STATUS     "Παράθυρο κατάστασης"
+    IDS_MENU_ACTIVE     "Ενεργό"
+    IDS_MENU_INACTIVE   "Ανενεργό"
+    IDS_MENU_NOWINDOWS  "(δεν εντοπίστηκαν παράθυρα)"
+    IDS_MENU_INFO       "Πληροφορίες…"
+    IDS_MENU_QUIT       "Έξοδος"
+    IDS_UNTITLED        "(χωρίς τίτλο)"
+    IDS_INFO_TITLE      "Σχετικά με το DeGhoster"
+    IDS_INFO_DESC       "Εξουδετερώνει αόρατα παράθυρα-φαντάσματα WebView2/Chromium που παρεμποδίζουν τα κλικ στην επιφάνεια εργασίας."
+    IDS_INFO_LICENSE    "Άδεια: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "Αν σας φαίνεται χρήσιμο αυτό το έργο, σκεφτείτε να το υποστηρίξετε:"
+    IDS_INFO_THIRDPARTY "Σημειώσεις τρίτων / άδεια"
+END

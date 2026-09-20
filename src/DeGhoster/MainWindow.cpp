@@ -1,0 +1,434 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+#include "MainWindow.h"
+#include "AppInfo.h"
+#include "Glyphs.h"
+#include "Gfx.h"
+#include "HoverButton.h"
+#include "InfoWindow.h"
+#include "Loc.h"
+#include "ProcessUtil.h"
+#include "resource.h"
+#include "Hook.h"   // WM_DGH_CLOAKED / WM_DGH_UNCLOAKED
+
+#include <commctrl.h>
+#include <uxtheme.h>
+#include <algorithm>
+#include <string>
+
+#pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "uxtheme.lib")
+
+namespace {
+constexpr wchar_t kClass[] = L"DeGhosterMainWindow";
+
+constexpr UINT WM_TRAY = WM_APP + 0x40;
+enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT };
+enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_WIN_BASE = 3000 };
+}
+
+MainWindow::MainWindow() : engine_(settings_) {}
+
+MainWindow::~MainWindow()
+{
+    if (uiFont_) DeleteObject(uiFont_);
+    if (rowSizer_) ImageList_Destroy(rowSizer_);
+}
+
+bool MainWindow::create(HINSTANCE inst)
+{
+    inst_ = inst;
+
+    WNDCLASSEXW wc{ sizeof(wc) };
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = inst;
+    wc.hIcon = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszClassName = kClass;
+    RegisterClassExW(&wc);
+
+    // Size for the primary-monitor DPI up front; GetDpiForWindow is unreliable
+    // before the window is shown at a CW_USEDEFAULT position.
+    dpi_ = GetDpiForSystem();
+    RECT wr{ 0, 0, S(396), S(269) };
+    AdjustWindowRectExForDpi(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi_);
+    int ww = wr.right - wr.left, wh = wr.bottom - wr.top;
+    RECT wa{}; SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+    int wx = wa.left + ((wa.right - wa.left) - ww) / 2;
+    int wy = wa.top + ((wa.bottom - wa.top) - wh) / 2;
+
+    DWORD ex = loc::isRtl() ? WS_EX_LAYOUTRTL : 0;
+    HWND h = CreateWindowExW(ex, kClass, app::Name, WS_OVERLAPPEDWINDOW,
+                             wx, wy, ww, wh, nullptr, nullptr, inst, this);
+    if (!h) return false;
+
+    ChangeWindowMessageFilterEx(h, WM_DGH_CLOAKED, MSGFLT_ALLOW, nullptr);
+    ChangeWindowMessageFilterEx(h, WM_DGH_UNCLOAKED, MSGFLT_ALLOW, nullptr);
+
+    applyFont();
+    settings_.load();
+    addTray();
+    ShowWindow(h, SW_SHOW);
+    layout();
+    applyTheme();
+    UpdateWindow(h);
+
+    engine_.setListener(this);
+    engine_.start(h);
+    updateStatus();
+    return true;
+}
+
+LRESULT CALLBACK MainWindow::WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+    MainWindow* self;
+    if (msg == WM_NCCREATE) {
+        self = static_cast<MainWindow*>(((CREATESTRUCTW*)lp)->lpCreateParams);
+        self->hwnd_ = h;
+        SetWindowLongPtrW(h, GWLP_USERDATA, (LONG_PTR)self);
+    } else {
+        self = (MainWindow*)GetWindowLongPtrW(h, GWLP_USERDATA);
+    }
+    return self ? self->handle(msg, wp, lp) : DefWindowProcW(h, msg, wp, lp);
+}
+
+void MainWindow::onCreate()
+{
+    DWORD bs = WS_CHILD | WS_VISIBLE | BS_OWNERDRAW;
+    power_ = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_POWER, inst_, nullptr);
+    info_  = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_INFO,  inst_, nullptr);
+    exit_  = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_EXIT,  inst_, nullptr);
+    ui::EnableHover(power_);
+    ui::EnableHover(info_);
+    ui::EnableHover(exit_);
+
+    list_ = CreateWindowExW(0, WC_LISTVIEWW, L"",
+                            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_NOSORTHEADER | LVS_NOCOLUMNHEADER,
+                            0, 0, 0, 0, hwnd_, (HMENU)IDC_LIST, inst_, nullptr);
+    ListView_SetExtendedListViewStyle(list_, LVS_EX_DOUBLEBUFFER);
+    LVCOLUMNW col{}; col.mask = LVCF_TEXT | LVCF_WIDTH;
+    col.pszText = (LPWSTR)L"Fenster"; col.cx = S(300); ListView_InsertColumn(list_, 0, &col);
+    col.mask |= LVCF_FMT; col.fmt = LVCFMT_CENTER; col.pszText = (LPWSTR)L""; col.cx = S(54);
+    ListView_InsertColumn(list_, 1, &col);
+}
+
+void MainWindow::applyFont()
+{
+    if (uiFont_) DeleteObject(uiFont_);
+    uiFont_ = CreateFontW(-MulDiv(9, dpi_, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                          DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    if (list_) SendMessageW(list_, WM_SETFONT, (WPARAM)uiFont_, TRUE);
+
+    // Force a taller row so the per-window eye can be drawn as large as the
+    // global power button. A 1px-wide (invisible) small-image list bumps the
+    // list's row height without adding a real icon indent.
+    if (list_) {
+        HIMAGELIST old = rowSizer_;
+        rowSizer_ = ImageList_Create(1, S(34), ILC_COLOR32, 1, 1);
+        ListView_SetImageList(list_, rowSizer_, LVSIL_SMALL);
+        if (old) ImageList_Destroy(old);
+    }
+}
+
+void MainWindow::applyTheme()
+{
+    theme_ = Theme::current();
+    ApplyDarkTitleBar(hwnd_, theme_.dark);
+    if (list_) {
+        SetWindowTheme(list_, theme_.dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+        ListView_SetBkColor(list_, theme_.listBg);
+        ListView_SetTextBkColor(list_, theme_.listBg);
+        ListView_SetTextColor(list_, theme_.fore);
+    }
+    InvalidateRect(hwnd_, nullptr, TRUE);
+}
+
+void MainWindow::layout()
+{
+    RECT rc; GetClientRect(hwnd_, &rc);
+    int band = S(44), btn = S(34), pad = S(5), gap = S(2);
+    MoveWindow(power_, pad, (band - btn) / 2, btn, btn, TRUE);
+    MoveWindow(exit_, rc.right - pad - btn, (band - btn) / 2, btn, btn, TRUE);
+    MoveWindow(info_, rc.right - pad - 2 * btn - gap, (band - btn) / 2, btn, btn, TRUE);
+    MoveWindow(list_, 0, band, rc.right, rc.bottom - band, TRUE);
+    int eye = S(54);
+    int wcol = (int)rc.right - eye - S(2);
+    if (wcol < S(120)) wcol = S(120);
+    ListView_SetColumnWidth(list_, 0, wcol);
+    ListView_SetColumnWidth(list_, 1, eye);
+}
+
+void MainWindow::rebuildList()
+{
+    ListView_DeleteAllItems(list_);
+    for (auto& kv : engine_.tracked()) {
+        std::wstring text = kv.second.title + L" (" + kv.second.exeName + L")";
+        LVITEMW it{}; it.mask = LVIF_PARAM | LVIF_TEXT;
+        it.iItem = ListView_GetItemCount(list_);
+        it.lParam = (LPARAM)kv.first;
+        it.pszText = (LPWSTR)text.c_str();
+        ListView_InsertItem(list_, &it);
+    }
+}
+
+void MainWindow::updateStatus()
+{
+    int n = engine_.ghostCount();
+    wchar_t t[128];
+    wsprintfW(t, L"%s — %d %s", app::Name, n,
+              loc::t(n == 1 ? IDS_GHOST_SINGULAR : IDS_GHOST_PLURAL));
+    SetWindowTextW(hwnd_, t);
+    lstrcpynW(nid_.szTip, t, ARRAYSIZE(nid_.szTip));
+    nid_.uFlags = NIF_TIP;
+    Shell_NotifyIconW(NIM_MODIFY, &nid_);
+}
+
+void MainWindow::onTrackedChanged() { rebuildList(); updateStatus(); }
+
+void MainWindow::drawButton(const DRAWITEMSTRUCT* d)
+{
+    SetLayout(d->hDC, 0);   // keep glyphs upright even under WS_EX_LAYOUTRTL
+    RECT rc = d->rcItem;
+    int w = rc.right - rc.left, hh = rc.bottom - rc.top;
+    bool hot = ui::IsHot(d->hwndItem);
+    bool pressed = (d->itemState & ODS_SELECTED) != 0;
+    HBRUSH bg = CreateSolidBrush(theme_.back);
+    FillRect(d->hDC, &rc, bg);
+    DeleteObject(bg);
+    int gl = (int)(std::min(w, hh) * 0.55);
+
+    if (d->CtlID == IDC_POWER) {
+        int dia = std::min(w, hh) - S(6);
+        RECT c{ rc.left + (w - dia) / 2, rc.top + (hh - dia) / 2,
+                rc.left + (w - dia) / 2 + dia, rc.top + (hh - dia) / 2 + dia };
+        bool on = settings_.globalEnabled();
+        gfx::FillCircle(d->hDC, c, 255, on ? theme_.accentOn : theme_.accentOff);
+        if (pressed || hot)
+            gfx::FillCircle(d->hDC, c, theme_.dark ? (pressed ? 150 : 100) : (pressed ? 90 : 60), RGB(255, 255, 255));
+        gfx::DrawGlyph(d->hDC, rc, glyph::Power, on ? RGB(255, 255, 255) : RGB(0, 0, 0), gl);
+    } else if (d->CtlID == IDC_INFO) {
+        gfx::DrawGlyph(d->hDC, rc, glyph::Info, hot ? theme_.infoHot : theme_.info, gl);
+    } else if (d->CtlID == IDC_EXIT) {
+        gfx::DrawGlyph(d->hDC, rc, glyph::Exit, hot ? theme_.exitHot : theme_.exit, gl);
+    }
+}
+
+LRESULT MainWindow::listCustomDraw(NMLVCUSTOMDRAW* cd)
+{
+    switch (cd->nmcd.dwDrawStage) {
+    case CDDS_PREPAINT:
+        return CDRF_NOTIFYITEMDRAW;
+    case CDDS_ITEMPREPAINT: {
+        bool alt = (cd->nmcd.dwItemSpec % 2) != 0;
+        cd->clrTextBk = alt ? theme_.rowAlt : theme_.listBg;
+        cd->clrText = theme_.fore;
+        return CDRF_NOTIFYSUBITEMDRAW;
+    }
+    case CDDS_ITEMPREPAINT | CDDS_SUBITEM: {
+        if (cd->iSubItem == 1) {
+            HWND ghost = (HWND)cd->nmcd.lItemlParam;
+            RECT rc; ListView_GetSubItemRect(list_, (int)cd->nmcd.dwItemSpec, 1, LVIR_BOUNDS, &rc);
+            HBRUSH bg = CreateSolidBrush((cd->nmcd.dwItemSpec % 2) ? theme_.rowAlt : theme_.listBg);
+            FillRect(cd->nmcd.hdc, &rc, bg); DeleteObject(bg);
+            auto it = engine_.tracked().find(ghost);
+            bool managed = it == engine_.tracked().end() || settings_.isManaged(it->second.disableKey());
+            DWORD oldLayout = GetLayout(cd->nmcd.hdc);
+            SetLayout(cd->nmcd.hdc, 0);   // keep the eye glyph upright under RTL
+            // Draw the per-window switch like the global power button: a filled
+            // green (managed) / grey (ignored) circle with the eye glyph on top,
+            // so a row's active state reads at a glance.
+            int w = rc.right - rc.left, hh = rc.bottom - rc.top;
+            int side = std::min(w, hh);
+            int dia = side - S(6);
+            RECT c{ rc.left + (w - dia) / 2, rc.top + (hh - dia) / 2,
+                    rc.left + (w - dia) / 2 + dia, rc.top + (hh - dia) / 2 + dia };
+            gfx::FillCircle(cd->nmcd.hdc, c, 255, managed ? theme_.accentOn : theme_.accentOff);
+            gfx::DrawGlyph(cd->nmcd.hdc, rc, managed ? glyph::Eye : glyph::EyeOff,
+                           managed ? RGB(255, 255, 255) : RGB(0, 0, 0), (int)(side * 0.55));
+            SetLayout(cd->nmcd.hdc, oldLayout);
+            return CDRF_SKIPDEFAULT;
+        }
+        bool alt = (cd->nmcd.dwItemSpec % 2) != 0;
+        cd->clrTextBk = alt ? theme_.rowAlt : theme_.listBg;
+        cd->clrText = theme_.fore;
+        return CDRF_NEWFONT;
+    }
+    }
+    return CDRF_DODEFAULT;
+}
+
+void MainWindow::onListClick(const NMITEMACTIVATE* ia)
+{
+    LVHITTESTINFO ht{}; ht.pt = ia->ptAction;
+    ListView_SubItemHitTest(list_, &ht);
+    if (ht.iSubItem != 1 || ht.iItem < 0) return;
+    LVITEMW it{}; it.mask = LVIF_PARAM; it.iItem = ht.iItem;
+    ListView_GetItem(list_, &it);
+    toggleWindow((HWND)it.lParam);
+}
+
+void MainWindow::setGlobalEnabled(bool on)
+{
+    if (settings_.globalEnabled() == on) return;
+    settings_.setGlobalEnabled(on);
+    InvalidateRect(power_, nullptr, TRUE);
+    engine_.refreshAll();
+}
+
+void MainWindow::toggleWindow(HWND ghost)
+{
+    auto it = engine_.tracked().find(ghost);
+    if (it == engine_.tracked().end()) return;
+    std::wstring key = it->second.disableKey();
+    settings_.setManaged(key, !settings_.isManaged(key));
+    engine_.refreshAll();
+    InvalidateRect(list_, nullptr, FALSE);
+}
+
+void MainWindow::showWindow()
+{
+    ShowWindow(hwnd_, SW_SHOW);
+    if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+    SetForegroundWindow(hwnd_);
+}
+
+void MainWindow::addTray()
+{
+    nid_.cbSize = sizeof(nid_);
+    nid_.hWnd = hwnd_;
+    nid_.uID = 1;
+    nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid_.uCallbackMessage = WM_TRAY;
+    nid_.hIcon = (HICON)LoadImageW(inst_, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
+                                   GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
+    lstrcpynW(nid_.szTip, app::Name, ARRAYSIZE(nid_.szTip));
+    Shell_NotifyIconW(NIM_ADD, &nid_);
+}
+
+void MainWindow::showTrayMenu()
+{
+    POINT pt; GetCursorPos(&pt);
+    HMENU m = CreatePopupMenu();
+    AppendMenuW(m, MF_STRING, IDM_SHOW, loc::t(IDS_MENU_STATUS));
+    SetMenuDefaultItem(m, IDM_SHOW, FALSE);
+    bool on = settings_.globalEnabled();
+    AppendMenuW(m, MF_STRING | (on ? MF_CHECKED : 0), IDM_ACTIVE,
+                loc::t(on ? IDS_MENU_ACTIVE : IDS_MENU_INACTIVE));
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+
+    menuWindows_.clear();
+    if (engine_.tracked().empty()) {
+        AppendMenuW(m, MF_STRING | MF_GRAYED, 0, loc::t(IDS_MENU_NOWINDOWS));
+    } else {
+        for (auto& kv : engine_.tracked()) {
+            UINT id = IDM_WIN_BASE + (UINT)menuWindows_.size();
+            menuWindows_.push_back(kv.first);
+            std::wstring label = kv.second.title + L" (" + kv.second.exeName + L")";
+            bool managed = settings_.isManaged(kv.second.disableKey());
+            AppendMenuW(m, MF_STRING | (managed ? MF_CHECKED : 0), id, label.c_str());
+        }
+    }
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING, IDM_INFO, loc::t(IDS_MENU_INFO));
+    AppendMenuW(m, MF_STRING, IDM_QUIT, loc::t(IDS_MENU_QUIT));
+
+    SetForegroundWindow(hwnd_);
+    int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd_, nullptr);
+    DestroyMenu(m);
+
+    if (cmd == IDM_SHOW) showWindow();
+    else if (cmd == IDM_ACTIVE) setGlobalEnabled(!on);
+    else if (cmd == IDM_INFO) InfoWindow::Show(inst_, hwnd_, theme_, dpi_, uiFont_);
+    else if (cmd == IDM_QUIT) { reallyExit_ = true; DestroyWindow(hwnd_); }
+    else if (cmd >= IDM_WIN_BASE) {
+        size_t i = cmd - IDM_WIN_BASE;
+        if (i < menuWindows_.size()) toggleWindow(menuWindows_[i]);
+    }
+}
+
+LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_CREATE: onCreate(); return 0;
+    case WM_SIZE: layout(); return 0;
+
+    case WM_ERASEBKGND: {
+        RECT rc; GetClientRect(hwnd_, &rc);
+        HBRUSH b = CreateSolidBrush(theme_.back);
+        FillRect((HDC)wp, &rc, b);
+        DeleteObject(b);
+        return 1;
+    }
+
+    case WM_DPICHANGED: {
+        dpi_ = HIWORD(wp);
+        applyFont();
+        RECT* p = (RECT*)lp;
+        SetWindowPos(hwnd_, nullptr, p->left, p->top, p->right - p->left, p->bottom - p->top, SWP_NOZORDER);
+        layout();
+        return 0;
+    }
+
+    case WM_DRAWITEM: drawButton((DRAWITEMSTRUCT*)lp); return TRUE;
+
+    case WM_NOTIFY: {
+        auto* n = (NMHDR*)lp;
+        if (n->idFrom == IDC_LIST) {
+            if (n->code == NM_CUSTOMDRAW) return listCustomDraw((NMLVCUSTOMDRAW*)lp);
+            if (n->code == NM_CLICK) onListClick((NMITEMACTIVATE*)lp);
+        }
+        return 0;
+    }
+
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDC_POWER: setGlobalEnabled(!settings_.globalEnabled()); return 0;
+        case IDC_INFO:  InfoWindow::Show(inst_, hwnd_, theme_, dpi_, uiFont_); return 0;
+        case IDC_EXIT:  reallyExit_ = true; DestroyWindow(hwnd_); return 0;
+        }
+        return 0;
+
+    case WM_TRAY:
+        if (LOWORD(lp) == WM_LBUTTONDBLCLK) showWindow();
+        else if (LOWORD(lp) == WM_RBUTTONUP || LOWORD(lp) == WM_LBUTTONUP) showTrayMenu();
+        return 0;
+
+    case WM_DGH_CLOAKED:   engine_.onCloaked((HWND)wp);   updateStatus(); return 0;
+    case WM_DGH_UNCLOAKED: engine_.onUncloaked((HWND)wp); updateStatus(); return 0;
+
+    case WM_SETTINGCHANGE:
+        applyTheme();
+        InvalidateRect(power_, nullptr, TRUE);
+        return 0;
+
+    case WM_CLOSE:
+        if (!reallyExit_) { ShowWindow(hwnd_, SW_HIDE); return 0; }
+        DestroyWindow(hwnd_);
+        return 0;
+
+    case WM_DESTROY:
+        engine_.stop();
+        Shell_NotifyIconW(NIM_DELETE, &nid_);
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcW(hwnd_, msg, wp, lp);
+}

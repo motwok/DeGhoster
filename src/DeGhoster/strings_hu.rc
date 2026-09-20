@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x0E, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "Szellem"
+    IDS_GHOST_PLURAL    "Szellemek"
+    IDS_MENU_STATUS     "Állapotablak"
+    IDS_MENU_ACTIVE     "Aktív"
+    IDS_MENU_INACTIVE   "Inaktív"
+    IDS_MENU_NOWINDOWS  "(nem található ablak)"
+    IDS_MENU_INFO       "Névjegy…"
+    IDS_MENU_QUIT       "Kilépés"
+    IDS_UNTITLED        "(névtelen)"
+    IDS_INFO_TITLE      "A DeGhoster névjegye"
+    IDS_INFO_DESC       "Semlegesíti a láthatatlan WebView2/Chromium szellemablakokat, amelyek elfogják az asztali kattintásokat."
+    IDS_INFO_LICENSE    "Licenc: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "Ha hasznosnak találod ezt a projektet, fontold meg a támogatását:"
+    IDS_INFO_THIRDPARTY "Harmadik felek közleményei / licenc"
+END

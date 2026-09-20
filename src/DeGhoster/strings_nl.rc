@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x13, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "Spook"
+    IDS_GHOST_PLURAL    "Spoken"
+    IDS_MENU_STATUS     "Statusvenster"
+    IDS_MENU_ACTIVE     "Actief"
+    IDS_MENU_INACTIVE   "Inactief"
+    IDS_MENU_NOWINDOWS  "(geen vensters gedetecteerd)"
+    IDS_MENU_INFO       "Over…"
+    IDS_MENU_QUIT       "Afsluiten"
+    IDS_UNTITLED        "(naamloos)"
+    IDS_INFO_TITLE      "Over DeGhoster"
+    IDS_INFO_DESC       "Neutraliseert onzichtbare WebView2/Chromium-spookvensters die je bureaubladklikken onderscheppen."
+    IDS_INFO_LICENSE    "Licentie: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "Als je dit project nuttig vindt, overweeg het dan te steunen:"
+    IDS_INFO_THIRDPARTY "Kennisgevingen van derden / licentie"
+END

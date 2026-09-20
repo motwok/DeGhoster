@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// VERSIONINFO for the injected hook DLL. Shared body lives in src/version.rc.
+#define VER_FILETYPE             VFT_DLL
+#define VER_INTERNALNAME_STR     "DeGhoster.Hook"
+#define VER_ORIGINALFILENAME_STR "DeGhoster.Hook.dll"
+#define VER_FILEDESCRIPTION_STR  "DeGhoster in-process hook (window cloak)"
+#include "../version.rc"

@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x05, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "Duch"
+    IDS_GHOST_PLURAL    "Duchové"
+    IDS_MENU_STATUS     "Okno stavu"
+    IDS_MENU_ACTIVE     "Aktivní"
+    IDS_MENU_INACTIVE   "Neaktivní"
+    IDS_MENU_NOWINDOWS  "(nebyla zjištěna žádná okna)"
+    IDS_MENU_INFO       "O aplikaci…"
+    IDS_MENU_QUIT       "Ukončit"
+    IDS_UNTITLED        "(bez názvu)"
+    IDS_INFO_TITLE      "O aplikaci DeGhoster"
+    IDS_INFO_DESC       "Neutralizuje neviditelná okna duchů WebView2/Chromium, která zachytávají kliknutí na ploše."
+    IDS_INFO_LICENSE    "Licence: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "Pokud je pro vás tento projekt užitečný, zvažte jeho podporu:"
+    IDS_INFO_THIRDPARTY "Oznámení třetích stran / licence"
+END

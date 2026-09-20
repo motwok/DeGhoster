@@ -1,0 +1,28 @@
+name: Release Drafter
+
+# Keeps a draft GitHub Release up to date from merged pull requests, and
+# auto-labels PRs so they land in the right changelog section. It only writes a
+# *draft* release — nothing is pushed to master and nothing is published until you
+# publish the draft yourself (which creates the version tag GitVersion reads).
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  update_release_draft:
+    permissions:
+      contents: write        # create / update the draft release
+      pull-requests: write   # autolabeler updates PR labels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

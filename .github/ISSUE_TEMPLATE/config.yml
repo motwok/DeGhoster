@@ -1,0 +1,10 @@
+# Issue chooser configuration.
+# Blank issues are disabled so every report goes through a structured form.
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a security vulnerability (private)
+    url: https://github.com/motwok/DeGhoster/security/advisories/new
+    about: Do NOT open a public issue for security problems — report privately here (see SECURITY.md).
+  - name: ☕ Support the project
+    url: https://ko-fi.com/motwok
+    about: DeGhoster is free. If it helps you, you can buy me a coffee.

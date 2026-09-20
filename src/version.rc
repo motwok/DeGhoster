@@ -1,0 +1,75 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Shared VERSIONINFO resource for every DeGhoster binary. The numeric/string
+// versions come from the generated Version.h (see cmake/Version.cmake); the
+// per-binary fields are supplied by the target via preprocessor defines:
+//   VER_FILETYPE          VFT_APP or VFT_DLL      (default VFT_APP)
+//   VER_INTERNALNAME_STR      e.g. "DeGhoster"
+//   VER_ORIGINALFILENAME_STR  e.g. "DeGhoster.exe"
+//   VER_FILEDESCRIPTION_STR   e.g. "DeGhoster - invisible ghost-window neutralizer"
+
+#include <windows.h>
+#include "Version.h"
+
+#ifndef VER_FILETYPE
+#define VER_FILETYPE VFT_APP
+#endif
+#ifndef VER_INTERNALNAME_STR
+#define VER_INTERNALNAME_STR "DeGhoster"
+#endif
+#ifndef VER_ORIGINALFILENAME_STR
+#define VER_ORIGINALFILENAME_STR "DeGhoster.exe"
+#endif
+#ifndef VER_FILEDESCRIPTION_STR
+#define VER_FILEDESCRIPTION_STR "DeGhoster"
+#endif
+
+#ifdef _DEBUG
+#define VER_DBG VS_FF_DEBUG
+#else
+#define VER_DBG 0
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    VER_FILEVERSION
+ PRODUCTVERSION VER_PRODUCTVERSION
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      VER_DBG
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VER_FILETYPE
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"          // U.S. English, Unicode
+        BEGIN
+            VALUE "CompanyName",      VER_COMPANYNAME_STR
+            VALUE "FileDescription",  VER_FILEDESCRIPTION_STR
+            VALUE "FileVersion",      VER_FILEVERSION_STR
+            VALUE "InternalName",     VER_INTERNALNAME_STR
+            VALUE "LegalCopyright",   VER_LEGALCOPYRIGHT_STR
+            VALUE "OriginalFilename", VER_ORIGINALFILENAME_STR
+            VALUE "ProductName",      VER_PRODUCTNAME_STR
+            VALUE "ProductVersion",   VER_PRODUCTVERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

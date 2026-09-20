@@ -1,0 +1,42 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "x64",
+      "displayName": "x64 (Hook64 + Host)",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/cmake/x64"
+    },
+    {
+      "name": "x86",
+      "displayName": "x86 (Hook32)",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "Win32",
+      "binaryDir": "${sourceDir}/build/cmake/x86"
+    }
+  ],
+  "buildPresets": [
+    { "name": "x64", "configurePreset": "x64", "configuration": "Release" },
+    { "name": "x86", "configurePreset": "x86", "configuration": "Release" }
+  ],
+  "workflowPresets": [
+    {
+      "name": "x86",
+      "displayName": "32-Bit-Hook",
+      "steps": [
+        { "type": "configure", "name": "x86" },
+        { "type": "build",     "name": "x86" }
+      ]
+    },
+    {
+      "name": "x64",
+      "displayName": "64-Bit-Hook + Host",
+      "steps": [
+        { "type": "configure", "name": "x64" },
+        { "type": "build",     "name": "x64" }
+      ]
+    }
+  ]
+}

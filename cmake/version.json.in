@@ -1,0 +1,11 @@
+{
+  "informationalVersion": "@DGV_INFORMATIONAL@",
+  "fullSemVer": "@DGV_FULLSEMVER@",
+  "majorMinorPatch": "@DGV_MMP@",
+  "fileVersion": "@DGV_MAJOR@.@DGV_MINOR@.@DGV_PATCH@.@DGV_REVISION@",
+  "major": @DGV_MAJOR@,
+  "minor": @DGV_MINOR@,
+  "patch": @DGV_PATCH@,
+  "revision": @DGV_REVISION@,
+  "shortSha": "@DGV_SHORTSHA@"
+}

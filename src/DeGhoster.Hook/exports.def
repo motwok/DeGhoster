@@ -1,0 +1,8 @@
+; Export the hook entry points under their PLAIN, undecorated names for BOTH
+; bitnesses. Without this, x86 __stdcall exports get name-decorated
+; (_DgInstallHook@8) and GetProcAddress(dll, "DgInstallHook") fails, so the
+; 32-bit injection path (Helper32) cannot resolve them. The .def makes the
+; linker export the undecorated names on x86 and x64 alike.
+EXPORTS
+    DgInstallHook
+    DgRemoveHook
