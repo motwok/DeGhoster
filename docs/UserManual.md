@@ -22,7 +22,7 @@ guide (silent install, upgrades, uninstall) see [Install.md](Install.md).
 
 ### Option A — the installer (recommended)
 
-1. Download **`DeGhoster-<version>-win-x64.msi`** and double-click it.
+1. Download **`DeGhoster-win-x64.msi`** and double-click it.
 2. Accept the licence and follow the wizard. Along the way you can choose:
    - **Who it's for** — *just me* (the default, no admin rights needed) or
      *everyone on this PC* ("Global", needs admin rights).
@@ -45,7 +45,7 @@ other program.
 
 ### Option B — the portable ZIP
 
-Prefer not to install anything? Download **`DeGhoster-<version>-win-x64.zip`**,
+Prefer not to install anything? Download **`DeGhoster-win-x64.zip`**,
 unpack it anywhere, and run **`DeGhoster.exe`**. No program files are installed,
 there's no Start-menu entry, and it does **not** start automatically at sign-in —
 you launch it yourself whenever you want it.
