@@ -8,8 +8,8 @@ How to install, update and remove DeGhoster. For day-to-day usage see the
 
 | Download | Best for | Installs? | Start-menu entry | Autostart at sign-in |
 |---|---|---|---|---|
-| `DeGhoster-<version>-win-x64.msi` | most people | yes (per-user or per-machine) | yes | yes (per-user) |
-| `DeGhoster-<version>-win-x64.zip` | portable / no install | no — just unzip | no | no |
+| `DeGhoster-win-x64.msi` | most people | yes (per-user or per-machine) | yes | yes (per-user) |
+| `DeGhoster-win-x64.zip` | portable / no install | no — just unzip | no | no |
 
 DeGhoster is 64-bit and needs Windows 10 or 11. There is **no runtime prerequisite**
 — nothing else to install first.
@@ -63,13 +63,13 @@ slate, that registry key) to remove it.
 
 ```powershell
 # Per-user (default scope), silent:
-msiexec /i DeGhoster-<version>-win-x64.msi /qn /l*v install.log
+msiexec /i DeGhoster-win-x64.msi /qn /l*v install.log
 
 # Per-machine ("Global"), silent (run elevated):
-msiexec /i DeGhoster-<version>-win-x64.msi ALLUSERS=1 /qn /l*v install.log
+msiexec /i DeGhoster-win-x64.msi ALLUSERS=1 /qn /l*v install.log
 
 # Only specific languages (plus the always-present core / en-US):
-msiexec /i DeGhoster-<version>-win-x64.msi /qn ADDLOCAL=Core,lang_de_DE,lang_fr_FR
+msiexec /i DeGhoster-win-x64.msi /qn ADDLOCAL=Core,lang_de_DE,lang_fr_FR
 ```
 
 **Feature names for `ADDLOCAL`:**
@@ -91,7 +91,7 @@ your settings are preserved. Downgrades are blocked with a clear message.
 
 - **Interactive:** *Settings → Apps* (or *Programs and Features*) → **DeGhoster** →
   Uninstall.
-- **Silent:** `msiexec /x DeGhoster-<version>-win-x64.msi /qn`
+- **Silent:** `msiexec /x DeGhoster-win-x64.msi /qn`
 
 Uninstalling removes the program files, the Start-menu shortcut and your per-user
 autostart entry. (On a per-machine uninstall, autostart entries created for *other*
