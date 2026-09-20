@@ -15,7 +15,11 @@ public class ClickThroughProofTests
     private const string SinkClass = "DeGhosterClickSink";
     private const int DWMWA_CLOAKED = 14;
 
+    // Drives a real SendInput mouse click, so it needs an interactive desktop
+    // where clicks actually land; excluded on headless CI via the InteractiveInput
+    // category. The attribute-based neutralization tests still run in CI.
     [Fact]
+    [Trait("Category", "InteractiveInput")]
     public void Ghost_eats_clicks_and_DeGhoster_lets_them_through()
     {
         string build = FindBuildDir();

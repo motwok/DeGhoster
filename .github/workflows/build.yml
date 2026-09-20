@@ -56,7 +56,7 @@ jobs:
 
       - name: Integration tests (neutralization, x64 + x86)
         shell: pwsh
-        run: dotnet test tests/DeGhoster.Tests/DeGhoster.Tests.csproj -c Release --nologo
+        run: dotnet test tests/DeGhoster.Tests/DeGhoster.Tests.csproj -c Release --nologo --filter "Category!=InteractiveInput"
 
       - name: Read version
         id: ver
