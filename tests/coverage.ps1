@@ -53,6 +53,6 @@ Write-Host "==> Running tests under OpenCppCoverage..." -ForegroundColor Cyan
     --export_type "cobertura:$out\coverage.cobertura.xml" `
     --export_type "html:$out\html" `
     --export_type "binary:$out\auto.cov" `
-    -- dotnet test "$repo\tests\DeGhoster.Tests\DeGhoster.Tests.csproj" -c Release --nologo
+    -- dotnet test "$repo\tests\DeGhoster.Tests\DeGhoster.Tests.csproj" -c Release --nologo --disable-build-servers
 
 Write-Host "Coverage report: $out\html\index.html" -ForegroundColor Green
