@@ -1,0 +1,40 @@
+# Normalize line endings: store LF in the repo, check out native on each OS.
+* text=auto
+
+# Windows-specific tooling files -> always CRLF on checkout.
+*.sln       text eol=crlf
+*.vcxproj   text eol=crlf
+*.props     text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
+
+# Source / text files (UTF-8).
+*.c         text
+*.cpp       text
+*.h         text
+*.hpp       text
+*.rc        text
+*.manifest  text
+*.cmake     text
+CMakeLists.txt text
+*.md        text
+*.svg       text
+*.yml       text
+*.yaml      text
+*.json      text
+
+# UTF-16 LE file consumed by muirct: must NOT be normalized by git.
+src/DeGhoster/rcconfig.xml -text
+
+# Binary assets (never touch line endings / diff as text).
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.exe   binary
+*.dll   binary
+*.mui   binary
+*.msi   binary
+*.zip   binary

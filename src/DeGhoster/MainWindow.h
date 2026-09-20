@@ -1,0 +1,76 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+#pragma once
+#include <windows.h>
+#include <commctrl.h>
+#include <shellapi.h>
+#include <vector>
+#include "Theme.h"
+#include "Settings.h"
+#include "GhostEngine.h"
+
+// Tray app + status window: ghost list with per-window eye toggle, power/info/exit
+// toolbar, tray menu.
+class MainWindow : public GhostEngine::Listener {
+public:
+    MainWindow();
+    ~MainWindow();
+
+    bool create(HINSTANCE);
+
+    // GhostEngine::Listener
+    void onTrackedChanged() override;
+
+private:
+    static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+    LRESULT handle(UINT, WPARAM, LPARAM);
+
+    void onCreate();
+    void layout();
+    void applyTheme();
+    void applyFont();
+    void rebuildList();
+    void updateStatus();
+
+    void drawButton(const DRAWITEMSTRUCT*);
+    LRESULT listCustomDraw(NMLVCUSTOMDRAW*);
+    void onListClick(const NMITEMACTIVATE*);
+
+    void showWindow();
+    void showTrayMenu();
+    void addTray();
+
+    void setGlobalEnabled(bool);
+    void toggleWindow(HWND ghost);
+
+    int S(int px) const { return MulDiv(px, dpi_, 96); }
+
+    HINSTANCE inst_ = nullptr;
+    HWND hwnd_ = nullptr, list_ = nullptr, power_ = nullptr, info_ = nullptr, exit_ = nullptr;
+    HFONT uiFont_ = nullptr;
+    HIMAGELIST rowSizer_ = nullptr;   // 1px-wide image list that forces a taller row height
+    NOTIFYICONDATAW nid_{};
+    UINT dpi_ = 96;
+    bool reallyExit_ = false;
+
+    Theme theme_;
+    Settings settings_;
+    GhostEngine engine_;
+
+    std::vector<HWND> menuWindows_;   // maps per-window menu ids to ghosts
+};

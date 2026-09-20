@@ -1,0 +1,25 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Data / markup files use 2-space indentation.
+[*.{yml,yaml,json}]
+indent_size = 2
+
+# Preserve Markdown hard line breaks (two trailing spaces).
+[*.md]
+trim_trailing_whitespace = false
+
+# Windows tooling / scripts stay CRLF.
+[*.{sln,vcxproj,props,cmd,bat,ps1}]
+end_of_line = crlf
+
+# The muirct config is UTF-16 LE — keep editors from re-encoding it.
+[rcconfig.xml]
+charset = utf-16le

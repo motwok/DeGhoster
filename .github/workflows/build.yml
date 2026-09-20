@@ -1,0 +1,85 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [ master ]
+  push:
+    branches: [ master ]
+  release:
+    types: [ published ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & package (Windows x64/x86)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (full history for GitVersion)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET (for the integration tests)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install WiX toolset + extensions
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+          wix extension add -g WixToolset.UI.wixext
+          wix extension add -g WixToolset.Util.wixext
+
+      - name: Build x86 (Hook32 + Helper32)
+        shell: pwsh
+        run: |
+          cmake -S . -B build/cmake/x86 -A Win32
+          cmake --build build/cmake/x86 --config Release
+
+      - name: Build x64 (Host + MUI + Hook64)
+        shell: pwsh
+        run: |
+          cmake -S . -B build/cmake/x64 -A x64
+          cmake --build build/cmake/x64 --config Release
+
+      - name: Package ZIP + MSI
+        shell: pwsh
+        run: ./build.ps1 -PackageOnly
+
+      - name: Integration tests (neutralization, x64 + x86)
+        shell: pwsh
+        run: dotnet test tests/DeGhoster.Tests/DeGhoster.Tests.csproj -c Release --nologo
+
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = Get-Content build/version.json | ConvertFrom-Json
+          "fullSemVer=$($v.fullSemVer)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload artifacts (ZIP + MSI)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeGhoster-${{ steps.ver.outputs.fullSemVer }}-win-x64
+          path: |
+            dist/*.zip
+            dist/*.msi
+          if-no-files-found: error
+
+      - name: Attach artifacts to the release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $assets = Get-ChildItem dist/*.zip, dist/*.msi | ForEach-Object FullName
+          gh release upload "$env:RELEASE_TAG" $assets --clobber

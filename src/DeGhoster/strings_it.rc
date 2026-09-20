@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x10, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "Fantasma"
+    IDS_GHOST_PLURAL    "Fantasmi"
+    IDS_MENU_STATUS     "Finestra di stato"
+    IDS_MENU_ACTIVE     "Attivo"
+    IDS_MENU_INACTIVE   "Inattivo"
+    IDS_MENU_NOWINDOWS  "(nessuna finestra rilevata)"
+    IDS_MENU_INFO       "Informazioni…"
+    IDS_MENU_QUIT       "Esci"
+    IDS_UNTITLED        "(senza titolo)"
+    IDS_INFO_TITLE      "Informazioni su DeGhoster"
+    IDS_INFO_DESC       "Neutralizza le finestre fantasma WebView2/Chromium invisibili che intercettano i clic sul desktop."
+    IDS_INFO_LICENSE    "Licenza: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "Se trovi utile questo progetto, valuta di sostenerlo:"
+    IDS_INFO_THIRDPARTY "Note di terze parti / licenza"
+END

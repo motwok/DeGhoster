@@ -1,0 +1,16 @@
+DeGhoster
+Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. See the LICENSE file for the full text.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+None. DeGhoster is a native Win32 application that links only against Windows
+system libraries (comctl32, dwmapi, uxtheme, gdiplus, shell32, user32, gdi32).
+Toolbar and list icons are glyphs from the "Segoe MDL2 Assets" font that ships
+with Windows; no icon assets are bundled or redistributed.

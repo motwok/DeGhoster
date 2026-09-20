@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x04, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "幽靈"
+    IDS_GHOST_PLURAL    "幽靈"
+    IDS_MENU_STATUS     "狀態視窗"
+    IDS_MENU_ACTIVE     "已啟用"
+    IDS_MENU_INACTIVE   "已停用"
+    IDS_MENU_NOWINDOWS  "(未偵測到視窗)"
+    IDS_MENU_INFO       "關於…"
+    IDS_MENU_QUIT       "結束"
+    IDS_UNTITLED        "(無標題)"
+    IDS_INFO_TITLE      "關於 DeGhoster"
+    IDS_INFO_DESC       "中和攔截桌面點擊的隱形 WebView2/Chromium 幽靈視窗。"
+    IDS_INFO_LICENSE    "授權：GNU AGPL v3"
+    IDS_INFO_SUPPORT    "如果您覺得這個專案有幫助，歡迎支持："
+    IDS_INFO_THIRDPARTY "第三方聲明 / 授權"
+END

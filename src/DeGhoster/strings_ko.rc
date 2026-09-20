@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x12, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "고스트"
+    IDS_GHOST_PLURAL    "고스트"
+    IDS_MENU_STATUS     "상태 창"
+    IDS_MENU_ACTIVE     "활성"
+    IDS_MENU_INACTIVE   "비활성"
+    IDS_MENU_NOWINDOWS  "(감지된 창 없음)"
+    IDS_MENU_INFO       "정보…"
+    IDS_MENU_QUIT       "종료"
+    IDS_UNTITLED        "(제목 없음)"
+    IDS_INFO_TITLE      "DeGhoster 정보"
+    IDS_INFO_DESC       "바탕 화면 클릭을 가로채는 보이지 않는 WebView2/Chromium 고스트 창을 무력화합니다."
+    IDS_INFO_LICENSE    "라이선스: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "이 프로젝트가 유용하다면 후원을 고려해 주세요:"
+    IDS_INFO_THIRDPARTY "타사 고지 / 라이선스"
+END

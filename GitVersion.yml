@@ -1,0 +1,14 @@
+# GitVersion configuration (https://gitversion.net)
+#
+# Versioning is derived from git history. To cut a release, tag the release
+# commit, e.g.:  git tag v1.0.0   (GitVersion then reports 1.0.0).
+# Between tags the patch is bumped and the commit count becomes the pre-release
+# number (e.g. 1.0.1-5). The very first version before any tag is 0.0.1-<n>.
+#
+# Consumed by cmake/Version.cmake (version resource of the binaries) and by the
+# packaging scripts (artifact names, MSI ProductVersion).
+
+workflow: GitFlow/v1
+
+# Recognise plain "v1.2.3" tags in addition to "1.2.3".
+tag-prefix: '[vV]?'

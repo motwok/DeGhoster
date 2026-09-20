@@ -1,0 +1,34 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// GENERATED FILE - do not edit. Produced by cmake/Version.cmake from
+// src/Version.h.in using GitVersion output. See docs/Build.md.
+
+#pragma once
+
+// Numeric version (four 16-bit fields) for FILEVERSION / PRODUCTVERSION.
+#define VER_FILEVERSION        @DGV_MAJOR@,@DGV_MINOR@,@DGV_PATCH@,@DGV_REVISION@
+#define VER_PRODUCTVERSION     @DGV_MAJOR@,@DGV_MINOR@,@DGV_PATCH@,@DGV_REVISION@
+
+// Human-readable version strings.
+#define VER_FILEVERSION_STR    "@DGV_MAJOR@.@DGV_MINOR@.@DGV_PATCH@.@DGV_REVISION@"
+#define VER_PRODUCTVERSION_STR "@DGV_INFORMATIONAL@"
+
+// Company / product / legal metadata shared by every binary's version resource.
+#define VER_COMPANYNAME_STR    "Emmo Emminghaus"
+#define VER_PRODUCTNAME_STR    "DeGhoster"
+#define VER_LEGALCOPYRIGHT_STR "Copyright (c) Emmo Emminghaus. Licensed under GNU AGPL v3."

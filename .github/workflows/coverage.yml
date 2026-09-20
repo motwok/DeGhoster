@@ -1,0 +1,58 @@
+name: Coverage
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: Coverage (OpenCppCoverage)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (full history for GitVersion)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install OpenCppCoverage
+        shell: pwsh
+        run: |
+          choco install opencppcoverage -y --no-progress
+          "C:\Program Files\OpenCppCoverage" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Build Debug with PDBs (x86 + x64)
+        shell: pwsh
+        run: |
+          cmake -S . -B build/cmake/x86 -A Win32
+          cmake --build build/cmake/x86 --config Debug
+          cmake -S . -B build/cmake/x64 -A x64
+          cmake --build build/cmake/x64 --config Debug
+
+      - name: Run tests under OpenCppCoverage
+        shell: pwsh
+        run: |
+          OpenCppCoverage.exe `
+            --sources src `
+            --modules build `
+            --cover_children --quiet `
+            --export_type cobertura:coverage\coverage.cobertura.xml `
+            --export_type html:coverage\html `
+            -- dotnet test tests\DeGhoster.Tests\DeGhoster.Tests.csproj -c Release --nologo
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/**
+          if-no-files-found: warn

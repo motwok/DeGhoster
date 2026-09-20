@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x0D, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "רוח רפאים"
+    IDS_GHOST_PLURAL    "רוחות רפאים"
+    IDS_MENU_STATUS     "חלון מצב"
+    IDS_MENU_ACTIVE     "פעיל"
+    IDS_MENU_INACTIVE   "לא פעיל"
+    IDS_MENU_NOWINDOWS  "(לא זוהו חלונות)"
+    IDS_MENU_INFO       "אודות…"
+    IDS_MENU_QUIT       "יציאה"
+    IDS_UNTITLED        "(ללא שם)"
+    IDS_INFO_TITLE      "אודות DeGhoster"
+    IDS_INFO_DESC       "מנטרל חלונות רפאים בלתי נראים של WebView2/Chromium שחוטפים את הקליקים בשולחן העבודה."
+    IDS_INFO_LICENSE    "רישיון: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "אם הפרויקט שימושי עבורך, שקול לתמוך בו:"
+    IDS_INFO_THIRDPARTY "הודעות צד שלישי / רישיון"
+END

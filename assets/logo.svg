@@ -1,0 +1,66 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e11d48"/>
+      <stop offset="1" stop-color="#7f1d1d"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e2e8f0"/>
+      <stop offset="1" stop-color="#64748b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fffbeb"/>
+      <stop offset="0.5" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="badgeClip"><rect x="8" y="8" width="240" height="240" rx="52"/></clipPath>
+  </defs>
+
+  <!-- Badge -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+
+  <!-- Alles am Badge clippen -> Strahler kommt aus der Ecke, Geist ragt teils raus -->
+  <g clip-path="url(#badgeClip)">
+    <!-- Bewegungs-Schlieren hinter dem Geist (weg vom Strahler, nach unten-rechts) -->
+    <g fill="none" stroke="#ffffff" stroke-linecap="round">
+      <path d="M150 120 q34 20 92 26" stroke-width="9" opacity="0.28"/>
+      <path d="M146 146 q40 20 96 24" stroke-width="7" opacity="0.42"/>
+      <path d="M156 170 q36 16 88 18" stroke-width="5" opacity="0.5"/>
+    </g>
+
+    <!-- Neutrona-Wand (Strahler) tief in die ECKE, gleiche Groesse -->
+    <path d="M26 22 L80 76" stroke="#334155" stroke-width="20" stroke-linecap="round"/>
+    <path d="M26 22 L80 76" stroke="#94a3b8" stroke-width="9" stroke-linecap="round"/>
+    <rect x="66" y="66" width="34" height="20" rx="4" transform="rotate(43 83 76)" fill="url(#metal)" stroke="#475569" stroke-width="3"/>
+    <circle cx="88" cy="84" r="16" fill="url(#glow)"/>
+
+    <!-- Weit aufgefaecherter Protonenstrahl: vier divergierende Zackenblitze -->
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <g stroke="#fbbf24" stroke-width="10" opacity="0.30">
+        <path d="M90 86 L112 62 L104 72 L128 56"/>
+        <path d="M90 86 L116 88 L106 94 L132 92"/>
+        <path d="M90 86 L112 112 L104 116 L130 122"/>
+        <path d="M90 86 L104 132 L96 134 L118 150"/>
+      </g>
+      <g stroke="#fde68a" stroke-width="5">
+        <path d="M90 86 L112 62 L104 72 L128 56"/>
+        <path d="M90 86 L116 88 L106 94 L132 92"/>
+        <path d="M90 86 L112 112 L104 116 L130 122"/>
+        <path d="M90 86 L104 132 L96 134 L118 150"/>
+      </g>
+      <g stroke="#ffffff" stroke-width="2">
+        <path d="M90 86 L112 62 L104 72 L128 56"/>
+        <path d="M90 86 L116 88 L106 94 L132 92"/>
+        <path d="M90 86 L112 112 L104 116 L130 122"/>
+        <path d="M90 86 L104 132 L96 134 L118 150"/>
+      </g>
+    </g>
+
+    <!-- Grosser, fliehender Geist im Emoji-Stil (Aermchen, ovale Augen, offener Mund) -->
+    <!-- EXAKT aus dem Referenzbild getracte Silhouette (weiss + Outline), noch ohne Gesicht -->
+    <g transform="translate(-17 33) scale(0.764)">
+      <path fill="#ffffff" stroke="#111111" stroke-width="9" stroke-linejoin="round"
+        d="M146 15 L200 15 L201 16 L206 16 L207 17 L210 17 L211 18 L214 18 L217 20 L219 20 L222 22 L224 22 L225 23 L228 24 L230 26 L233 27 L235 29 L236 29 L240 33 L241 33 L251 43 L251 44 L254 47 L254 48 L258 53 L258 54 L264 65 L264 67 L265 68 L265 70 L266 71 L266 73 L267 74 L267 78 L268 79 L268 84 L269 85 L269 95 L271 97 L273 97 L274 98 L281 101 L287 106 L288 106 L293 111 L293 112 L296 115 L296 116 L298 118 L298 119 L302 126 L302 128 L303 129 L303 132 L304 133 L304 137 L305 138 L305 158 L304 159 L304 161 L303 162 L302 165 L297 170 L296 170 L295 171 L293 171 L292 172 L282 172 L281 171 L278 170 L273 166 L273 165 L271 163 L271 161 L269 158 L267 161 L267 164 L266 165 L266 168 L265 169 L265 172 L264 173 L264 175 L263 176 L263 178 L262 179 L261 184 L260 185 L260 186 L259 187 L256 194 L254 196 L253 199 L247 206 L247 207 L240 214 L240 215 L239 215 L231 223 L230 223 L227 226 L226 226 L221 230 L220 230 L219 231 L218 231 L207 237 L205 237 L202 239 L200 239 L199 240 L196 240 L195 241 L193 241 L192 242 L188 242 L187 243 L182 243 L181 244 L156 244 L155 243 L150 243 L149 242 L145 242 L144 241 L141 241 L140 240 L138 240 L137 239 L135 239 L134 238 L129 237 L128 236 L127 236 L126 235 L125 235 L124 234 L117 231 L115 229 L114 229 L110 226 L109 226 L105 222 L104 222 L97 215 L96 215 L96 214 L89 207 L89 206 L86 203 L86 202 L82 197 L80 192 L78 190 L78 188 L76 185 L76 181 L75 180 L75 177 L76 176 L76 173 L77 172 L78 169 L83 164 L84 164 L85 163 L88 163 L89 162 L95 162 L96 163 L97 163 L98 162 L98 160 L97 159 L97 136 L98 135 L98 131 L99 130 L100 125 L101 124 L103 119 L107 114 L107 113 L116 104 L117 104 L122 100 L123 100 L126 98 L128 98 L133 95 L133 75 L134 74 L134 70 L135 69 L135 66 L136 65 L136 63 L137 62 L140 55 L143 51 L143 50 L136 43 L136 42 L134 40 L134 38 L133 37 L133 28 L134 27 L134 25 L135 24 L135 23 L141 17 L142 17 L143 16 L145 16 Z"/>
+    </g>
+  </g>
+</svg>

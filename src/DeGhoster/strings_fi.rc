@@ -1,0 +1,38 @@
+// Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include <windows.h>
+#include "resource.h"
+#pragma code_page(65001)
+
+LANGUAGE 0x0B, 0x01
+STRINGTABLE
+BEGIN
+    IDS_GHOST_SINGULAR  "Haamu"
+    IDS_GHOST_PLURAL    "Haamut"
+    IDS_MENU_STATUS     "Tilaikkuna"
+    IDS_MENU_ACTIVE     "Käytössä"
+    IDS_MENU_INACTIVE   "Ei käytössä"
+    IDS_MENU_NOWINDOWS  "(ikkunoita ei havaittu)"
+    IDS_MENU_INFO       "Tietoja…"
+    IDS_MENU_QUIT       "Lopeta"
+    IDS_UNTITLED        "(nimetön)"
+    IDS_INFO_TITLE      "Tietoja DeGhosterista"
+    IDS_INFO_DESC       "Neutraloi näkymättömät WebView2/Chromium-haamuikkunat, jotka sieppaavat työpöydän napsautukset."
+    IDS_INFO_LICENSE    "Lisenssi: GNU AGPL v3"
+    IDS_INFO_SUPPORT    "Jos tämä projekti on hyödyllinen, harkitse sen tukemista:"
+    IDS_INFO_THIRDPARTY "Kolmansien osapuolten ilmoitukset / lisenssi"
+END
