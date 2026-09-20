@@ -47,7 +47,7 @@ jobs:
             --cover_children --quiet `
             --export_type cobertura:coverage\coverage.cobertura.xml `
             --export_type html:coverage\html `
-            -- dotnet test tests\DeGhoster.Tests\DeGhoster.Tests.csproj -c Release --nologo --filter "Category!=InteractiveInput"
+            -- dotnet test tests\DeGhoster.Tests\DeGhoster.Tests.csproj -c Release --nologo --filter "Category!=InteractiveInput" --disable-build-servers
 
       - name: Upload coverage report
         if: always()
