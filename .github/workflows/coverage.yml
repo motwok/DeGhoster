@@ -42,7 +42,7 @@ jobs:
         shell: pwsh
         run: |
           OpenCppCoverage.exe `
-            --sources src `
+            --sources "$env:GITHUB_WORKSPACE\src" `
             --modules build `
             --cover_children --quiet `
             --export_type cobertura:coverage\coverage.cobertura.xml `
