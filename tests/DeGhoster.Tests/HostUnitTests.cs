@@ -34,7 +34,7 @@ public class HostUnitTests
             Assert.Equal(0, Run(deghoster, "--register-autostart").code);
             string? v = ReadRunValue();
             Assert.False(string.IsNullOrEmpty(v), "autostart value was not written");
-            Assert.Equal($"\"{deghoster}\"", v, ignoreCase: true);
+            Assert.Equal($"\"{deghoster}\" --taskbar", v, ignoreCase: true);
 
             Assert.Equal(0, Run(deghoster, "--unregister-autostart").code);
             Assert.Null(ReadRunValue());
