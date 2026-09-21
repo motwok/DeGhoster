@@ -35,4 +35,5 @@ BEGIN
     IDS_INFO_LICENSE    "רישיון: GNU AGPL v3"
     IDS_INFO_SUPPORT    "אם הפרויקט שימושי עבורך, שקול לתמוך בו:"
     IDS_INFO_THIRDPARTY "הודעות צד שלישי / רישיון"
+    IDS_COL_WINDOW      "חלון (קובץ הפעלה)"
 END

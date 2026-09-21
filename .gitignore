@@ -1,12 +1,12 @@
-# Zentrales Build-Ausgabeverzeichnis
+# Central build output directory
 /build/
 
-# Fallback (falls doch mal lokal gebaut wird)
+# Fallback (in case something is built locally after all)
 [Bb]in/
 [Oo]bj/
 *.user
 
-# Native (MSVC) Zwischenartefakte
+# Native (MSVC) intermediate artifacts
 *.obj
 *.lib
 *.exp

@@ -113,10 +113,10 @@ autostart; only the installer does. The app exposes `--register-autostart` /
 ## 7. User interface
 
 - **Tray app.** Left/right click opens the context menu; double-click opens the
-  status window (bold "Statusfenster" = default action).
+  status window (the bold "Status Window" entry = default action).
 - **Menu:** status window · Active/Inactive · one entry per detected window (toggles
   it) · Info · Quit.
-- **Status window:** title `DeGhoster — N Geister`; a list of detected windows
+- **Status window:** title `DeGhoster — N Ghosts`; a list of detected windows
   (`Title (exe)`), each with a per-window **eye switch** shown the same way as the
   global power switch — a green circle with an open eye when managed, a grey circle
   with a crossed-out eye when ignored; toolbar with power (green/grey), info, quit.

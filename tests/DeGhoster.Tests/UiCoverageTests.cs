@@ -21,6 +21,7 @@ public class UiCoverageTests
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002, MOUSEEVENTF_LEFTUP = 0x0004;
     private const int IDC_LIST = 1001, IDC_POWER = 1002, IDC_INFO = 1003, IDC_EXIT = 1004;
+    private const uint LVM_GETHEADER = 0x101F;
 
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int left, top, right, bottom; }
 
@@ -97,13 +98,22 @@ public class UiCoverageTests
             Thread.Sleep(250);
             GetWindowRect(list, out RECT r);
 
+            // Row 0 starts just below the column header. Query the list's header and
+            // use its bottom edge so the click lands on the first row whether or not
+            // the header is visible (it has ~0 height under LVS_NOCOLUMNHEADER).
+            int rowTop = r.top;
+            IntPtr header = SendMessage(list, LVM_GETHEADER, IntPtr.Zero, IntPtr.Zero);
+            if (header != IntPtr.Zero && GetWindowRect(header, out RECT hr) &&
+                hr.bottom > r.top && hr.bottom < r.bottom)
+                rowTop = hr.bottom;
+
             // Eye cell = rightmost column, first row. A REAL click (mouse_event at
             // the cursor) makes the list fire NM_CLICK -> onListClick -> toggle,
             // which a posted WM_LBUTTON* does not. The first click may only
             // activate the window, so click again if it didn't take.
             void ClickEye()
             {
-                SetCursorPos(r.right - 26, r.top + 15);
+                SetCursorPos(r.right - 26, rowTop + 15);
                 Thread.Sleep(60);
                 mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, IntPtr.Zero);
                 mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
@@ -128,8 +138,8 @@ public class UiCoverageTests
             // blocks DeGhoster's thread until a selection is made.
             PostMessage(host, WM_TRAY, IntPtr.Zero, (IntPtr)WM_RBUTTONUP);
             Thread.Sleep(600);
-            // Menu order: Statusfenster (default), Aktiv, separator, <window entry>,
-            // separator, Info, Beenden. Navigate to the window entry and select it.
+            // Menu order: Status Window (default), Active, separator, <window entry>,
+            // separator, About, Exit. Navigate to the window entry and select it.
             for (int i = 0; i < 3; i++) { Key(VK_DOWN); Thread.Sleep(90); }
             Key(VK_RETURN);
 
@@ -223,6 +233,8 @@ public class UiCoverageTests
     private static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")]
     private static extern IntPtr GetDlgItem(IntPtr parent, int id);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")]
     private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")]

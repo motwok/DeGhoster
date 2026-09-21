@@ -35,4 +35,5 @@ BEGIN
     IDS_INFO_LICENSE    "Ліцензія: GNU AGPL v3"
     IDS_INFO_SUPPORT    "Якщо проєкт корисний, підтримайте його:"
     IDS_INFO_THIRDPARTY "Повідомлення третіх сторін / ліцензія"
+    IDS_COL_WINDOW      "Вікно (Програма)"
 END
