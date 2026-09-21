@@ -20,7 +20,9 @@
 
 struct Theme {
     bool dark = true;
-    COLORREF back, panel, fore, listBg, rowAlt, foreDim;   // set by current()
+    // Zero-initialized so a paint that slips in before current() runs reads a
+    // defined colour (black) instead of an indeterminate one.
+    COLORREF back = 0, panel = 0, fore = 0, listBg = 0, rowAlt = 0, foreDim = 0;   // set by current()
 
     COLORREF accentOn  = RGB(34, 197, 94);
     COLORREF accentOff = RGB(96, 96, 96);

@@ -34,10 +34,20 @@ private:
     typedef HHOOK (__stdcall* InstallFn)(DWORD, HWND);
     typedef BOOL  (__stdcall* RemoveFn)(HHOOK);
 
+    // Thread IDs are recycled by Windows, so a bare threadId is not a stable key:
+    // a restarted target can reuse an id we still hold an entry for. We pin each
+    // entry to the thread's creation time and drop it when that no longer matches.
+    struct HookEntry   { HHOOK  hook = nullptr; ULONGLONG born = 0; };
+    struct HelperEntry { HANDLE proc = nullptr; ULONGLONG born = 0; };
+
+    static ULONGLONG threadBornTime(DWORD threadId);
+    // Returns true if a live, matching entry already exists; prunes a stale one.
+    bool haveLiveEntry(DWORD threadId);
+
     HMODULE   dll_ = nullptr;
     InstallFn install_ = nullptr;
     RemoveFn  remove_  = nullptr;
     std::wstring exeDir_;
-    std::unordered_map<DWORD, HHOOK>  hooks_;    // threadId -> hook (x64)
-    std::unordered_map<DWORD, HANDLE> helpers_;  // threadId -> helper process (x86)
+    std::unordered_map<DWORD, HookEntry>   hooks_;    // threadId -> hook (x64)
+    std::unordered_map<DWORD, HelperEntry> helpers_;  // threadId -> helper process (x86)
 };

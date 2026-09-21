@@ -33,11 +33,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
     DWORD hostPid = (DWORD)wcstoul(argv[3], nullptr, 10);
 
     wchar_t path[MAX_PATH];
-    GetModuleFileNameW(nullptr, path, MAX_PATH);
-    wchar_t* slash = wcsrchr(path, L'\\');
-    if (slash) slash[1] = 0;
-    wcscat_s(path, L"DeGhoster.Hook32.dll");
-    HMODULE dll = LoadLibraryW(path);
+    DWORD pn = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    if (pn == 0 || pn >= MAX_PATH) return 2;   // path truncated: don't guess a wrong dir
+    std::wstring dllPath(path, pn);
+    size_t slash = dllPath.find_last_of(L'\\');
+    dllPath = (slash == std::wstring::npos) ? std::wstring() : dllPath.substr(0, slash + 1);
+    dllPath += L"DeGhoster.Hook32.dll";
+    HMODULE dll = LoadLibraryW(dllPath.c_str());
     if (!dll) return 2;
 
     InstallFn install = (InstallFn)GetProcAddress(dll, "DgInstallHook");
@@ -57,28 +59,30 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
     }
 
     HANDLE hostProc = OpenProcess(SYNCHRONIZE, FALSE, hostPid);
-    if (hostProc)
+    if (!hostProc)
     {
-        for (;;)
-        {
-            DWORD w = MsgWaitForMultipleObjects(1, &hostProc, FALSE, INFINITE, QS_ALLINPUT);
-            if (w == WAIT_OBJECT_0) break;
-            MSG msg;
-            bool quit = false;
-            while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
-            {
-                if (msg.message == WM_QUIT) { quit = true; break; }
-                TranslateMessage(&msg); DispatchMessageW(&msg);
-            }
-            if (quit) break;
-        }
-        CloseHandle(hostProc);
+        // Without a handle to the host we have no exit condition (the helper has no
+        // window, so no WM_QUIT ever arrives). Falling back to GetMessageW would
+        // orphan this process forever with the hook still installed. Bail out.
+        remove(hook);
+        FreeLibrary(dll);
+        return 5;
     }
-    else
+
+    for (;;)
     {
+        DWORD w = MsgWaitForMultipleObjects(1, &hostProc, FALSE, INFINITE, QS_ALLINPUT);
+        if (w == WAIT_OBJECT_0) break;
         MSG msg;
-        while (GetMessageW(&msg, nullptr, 0, 0) > 0) { TranslateMessage(&msg); DispatchMessageW(&msg); }
+        bool quit = false;
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+        {
+            if (msg.message == WM_QUIT) { quit = true; break; }
+            TranslateMessage(&msg); DispatchMessageW(&msg);
+        }
+        if (quit) break;
     }
+    CloseHandle(hostProc);
 
     remove(hook);
     FreeLibrary(dll);

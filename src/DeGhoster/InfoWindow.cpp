@@ -49,7 +49,7 @@ HWND InfoWindow::s_active = nullptr;
 
 HWND InfoWindow::ActiveHandle() { return s_active; }
 
-void InfoWindow::Show(HINSTANCE inst, HWND owner, const Theme& theme, UINT dpi, HFONT uiFont)
+void InfoWindow::Show(HINSTANCE inst, HWND owner, const Theme& theme, UINT dpi)
 {
     if (s_active && IsWindow(s_active)) { SetForegroundWindow(s_active); return; }
 
@@ -68,14 +68,31 @@ void InfoWindow::Show(HINSTANCE inst, HWND owner, const Theme& theme, UINT dpi, 
     auto* self = new InfoWindow();
     self->theme_ = theme;
     self->dpi_ = dpi;
-    self->uiFont_ = uiFont;
 
     RECT wr{ 0, 0, self->S(400), self->S(396) };
     AdjustWindowRectExForDpi(&wr, WS_CAPTION | WS_SYSMENU, FALSE, 0, dpi);
     int ww = wr.right - wr.left, wh = wr.bottom - wr.top;
-    RECT o; GetWindowRect(owner, &o);
-    int x = o.left + ((o.right - o.left) - ww) / 2;
-    int y = o.top + ((o.bottom - o.top) - wh) / 2;
+
+    // Centre on the owner, but a minimized owner reports a rect near (-32000,-32000),
+    // which would place us off-screen. Fall back to the owner's monitor work area,
+    // then clamp so we're always fully on that monitor.
+    RECT area;
+    HMONITOR mon = MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{ sizeof(mi) };
+    GetMonitorInfoW(mon, &mi);
+    RECT o;
+    if (!IsIconic(owner) && IsWindowVisible(owner) && GetWindowRect(owner, &o) &&
+        o.right > o.left && o.left > -30000) {
+        area = o;
+    } else {
+        area = mi.rcWork;
+    }
+    int x = area.left + ((area.right - area.left) - ww) / 2;
+    int y = area.top + ((area.bottom - area.top) - wh) / 2;
+    if (x + ww > mi.rcWork.right)  x = mi.rcWork.right - ww;
+    if (y + wh > mi.rcWork.bottom) y = mi.rcWork.bottom - wh;
+    if (x < mi.rcWork.left) x = mi.rcWork.left;
+    if (y < mi.rcWork.top)  y = mi.rcWork.top;
 
     DWORD ex = WS_EX_DLGMODALFRAME | (loc::isRtl() ? WS_EX_LAYOUTRTL : 0);
     HWND h = CreateWindowExW(ex, kClass, loc::t(IDS_INFO_TITLE),
@@ -157,6 +174,12 @@ LRESULT InfoWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
     switch (msg) {
     case WM_CREATE:
         brush_ = CreateSolidBrush(theme_.back);
+        // Own our font instead of borrowing the caller's: the main window deletes
+        // its font on WM_DPICHANGED, which would leave a modeless Info window using
+        // a freed HFONT.
+        uiFont_ = CreateFontW(-MulDiv(9, dpi_, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
         icon_ = (HICON)LoadImageW((HINSTANCE)GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE),
                                   MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON, S(48), S(48), 0);
         {
@@ -166,7 +189,7 @@ LRESULT InfoWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
                                            hwnd_, (HMENU)(UINT_PTR)kLinkLicense, nullptr, nullptr);
         }
         link_ = CreateWindowExW(0, WC_LINK,
-                                L"<a href=\"https://ko-fi.com/motwok\">☕ Buy Me a Coffee</a>",
+                                L"<a href=\"https://ko-fi.com/motwok\">\u2615 Buy Me a Coffee</a>",
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 0, 0,
                                 hwnd_, (HMENU)(UINT_PTR)kLinkCoffee, nullptr, nullptr);
         ok_ = CreateWindowW(L"BUTTON", L"OK", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
@@ -228,6 +251,7 @@ LRESULT InfoWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
     case WM_DESTROY:
         if (icon_) DestroyIcon(icon_);
         if (brush_) DeleteObject(brush_);
+        if (uiFont_) DeleteObject(uiFont_);
         return 0;
     }
     return DefWindowProcW(hwnd_, msg, wp, lp);

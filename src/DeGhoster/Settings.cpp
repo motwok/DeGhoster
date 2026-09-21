@@ -18,6 +18,7 @@
 #include "Settings.h"
 #include <windows.h>
 #include <string>
+#include <vector>
 
 namespace {
 // Registry root under HKCU. Overridable via DEGHOSTER_SETTINGS_ROOT so tests can
@@ -35,6 +36,9 @@ std::wstring disabledKey() { return rootKey() + L"\\Disabled"; }
 
 void Settings::load()
 {
+    globalEnabled_ = true;   // reset to defaults so a reload replaces, not merges
+    disabled_.clear();
+
     HKEY k;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, rootKey().c_str(), 0, KEY_READ, &k) == ERROR_SUCCESS) {
         DWORD v = 1, sz = sizeof(v);
@@ -43,11 +47,19 @@ void Settings::load()
         RegCloseKey(k);
     }
     if (RegOpenKeyExW(HKEY_CURRENT_USER, disabledKey().c_str(), 0, KEY_READ, &k) == ERROR_SUCCESS) {
-        wchar_t name[1024];
+        // Value names (exePath|title) can be long. Size the buffer to the key's
+        // actual maximum so a single long name can't return ERROR_MORE_DATA and
+        // cut the enumeration short, silently dropping every later opt-out.
+        DWORD maxLen = 0;
+        RegQueryInfoKeyW(k, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                         nullptr, &maxLen, nullptr, nullptr, nullptr);
+        std::vector<wchar_t> name(maxLen + 1u);
         for (DWORD i = 0;; ++i) {
-            DWORD len = 1024;
-            if (RegEnumValueW(k, i, name, &len, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS) break;
-            if (name[0]) disabled_.insert(name);
+            DWORD len = (DWORD)name.size();
+            LONG r = RegEnumValueW(k, i, name.data(), &len, nullptr, nullptr, nullptr, nullptr);
+            if (r == ERROR_NO_MORE_ITEMS) break;
+            if (r == ERROR_SUCCESS && name[0]) disabled_.insert(name.data());
+            // any other error for this index: skip it, keep enumerating
         }
         RegCloseKey(k);
     }
@@ -74,13 +86,15 @@ void Settings::setManaged(const std::wstring& key, bool managed)
     HKEY k;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, disabledKey().c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &k, nullptr) == ERROR_SUCCESS) {
         if (managed) {
-            disabled_.erase(key);
-            RegDeleteValueW(k, key.c_str());
+            LONG r = RegDeleteValueW(k, key.c_str());
+            // Mirror the registry: only forget the opt-out if the delete stuck (or
+            // the value was already gone), so the in-memory set can't drift from it.
+            if (r == ERROR_SUCCESS || r == ERROR_FILE_NOT_FOUND) disabled_.erase(key);
         } else {
-            disabled_.insert(key);
             std::wstring title = key.substr(key.find(L'|') + 1);  // readable value
-            RegSetValueExW(k, key.c_str(), 0, REG_SZ,
-                           (LPBYTE)title.c_str(), (DWORD)((title.size() + 1) * sizeof(wchar_t)));
+            LONG r = RegSetValueExW(k, key.c_str(), 0, REG_SZ,
+                                    (LPBYTE)title.c_str(), (DWORD)((title.size() + 1) * sizeof(wchar_t)));
+            if (r == ERROR_SUCCESS) disabled_.insert(key);
         }
         RegCloseKey(k);
     }

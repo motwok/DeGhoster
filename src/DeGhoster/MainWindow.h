@@ -33,6 +33,10 @@ public:
 
     bool create(HINSTANCE);
 
+    // If an instance is already running, bring its window to the front. Returns
+    // true if one was found (the new process should then exit).
+    static bool activateExisting();
+
     // GhostEngine::Listener
     void onTrackedChanged() override;
 
@@ -42,6 +46,7 @@ private:
 
     void onCreate();
     void layout();
+    void sizeListColumns();
     void applyTheme();
     void applyFont();
     void rebuildList();
@@ -66,6 +71,7 @@ private:
     HIMAGELIST rowSizer_ = nullptr;   // 1px-wide image list that forces a taller row height
     NOTIFYICONDATAW nid_{};
     UINT dpi_ = 96;
+    UINT taskbarCreatedMsg_ = 0;   // "TaskbarCreated" broadcast: re-add the tray icon
     bool reallyExit_ = false;
 
     Theme theme_;

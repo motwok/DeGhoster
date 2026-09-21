@@ -22,7 +22,7 @@
 // Dark-mode "About" popup (TaskDialog has no dark theming). Modeless, single-instance.
 class InfoWindow {
 public:
-    static void Show(HINSTANCE, HWND owner, const Theme&, UINT dpi, HFONT uiFont);
+    static void Show(HINSTANCE, HWND owner, const Theme&, UINT dpi);
     static HWND ActiveHandle();   // for the main loop's IsDialogMessage; null when closed
 
 private:
@@ -34,7 +34,7 @@ private:
     HWND hwnd_ = nullptr, link_ = nullptr, licenseLink_ = nullptr, ok_ = nullptr;
     HBRUSH brush_ = nullptr;
     HICON icon_ = nullptr;
-    HFONT uiFont_ = nullptr;   // borrowed from the caller
+    HFONT uiFont_ = nullptr;   // owned: created in WM_CREATE, freed in WM_DESTROY
     Theme theme_;
     UINT dpi_ = 96;
     int S(int px) const { return MulDiv(px, dpi_, 96); }

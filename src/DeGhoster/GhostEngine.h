@@ -42,6 +42,7 @@ public:
     int ghostCount() const { return (int)tracked_.size(); }
 
     void refreshAll();
+    void expirePending();    // drop cloak/uncloak requests the hook never answered
 
     void onCloaked(HWND);    // hook replies routed from the host window
     void onUncloaked(HWND);
@@ -52,6 +53,7 @@ private:
     void handleCandidate(HWND);
     void reconcile(HWND);
     bool desiredCloaked(const FixInfo&, HWND) const;
+    bool isBadPid(DWORD pid);   // true while a failed pid is still in its cooldown
 
     Settings& settings_;
     Listener* listener_ = nullptr;
@@ -59,8 +61,9 @@ private:
 
     HookInjector hooks_;
     std::unordered_map<HWND, FixInfo> tracked_;
-    std::unordered_set<HWND> cloaked_, pending_;
-    std::unordered_set<DWORD> badPids_;   // hosts we could not inject; skip re-tries
+    std::unordered_set<HWND> cloaked_;
+    std::unordered_map<HWND, ULONGLONG> pending_;   // hwnd -> tick when the request was posted
+    std::unordered_map<DWORD, ULONGLONG> badPids_;  // failed hosts -> tick; retried after a cooldown
     HWINEVENTHOOK we1_ = nullptr, we2_ = nullptr;
 
     static GhostEngine* s_instance;   // for the out-of-context win-event thunk

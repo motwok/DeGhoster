@@ -54,6 +54,19 @@ static void SettingsTests()
         Settings s3; s3.load();
         Check(s3.isManaged(key), "re-managed state persists across reload");
     }
+    {
+        // A value name longer than the old fixed 1024-wchar buffer used to make
+        // RegEnumValueW return ERROR_MORE_DATA and cut the enumeration short,
+        // silently dropping this opt-out (and any after it) on reload.
+        const std::wstring longKey = L"C:\\Apps\\Ghosty.exe|" + std::wstring(2000, L'x');
+        const std::wstring shortKey = L"C:\\Apps\\Other.exe|Small";
+        Settings s; s.load();
+        s.setManaged(longKey, false);
+        s.setManaged(shortKey, false);
+        Settings s2; s2.load();
+        Check(!s2.isManaged(longKey), "long (>1024 char) opt-out survives reload");
+        Check(!s2.isManaged(shortKey), "opt-out after a long one is not dropped");
+    }
 
     RegDeleteTreeW(HKEY_CURRENT_USER, root.c_str());
 }

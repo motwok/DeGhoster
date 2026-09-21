@@ -39,8 +39,21 @@ namespace {
 constexpr wchar_t kClass[] = L"DeGhosterMainWindow";
 
 constexpr UINT WM_TRAY = WM_APP + 0x40;
+constexpr UINT_PTR kPendingTimer = 1;
 enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT };
 enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_WIN_BASE = 3000 };
+
+// Cross-process "show yourself" ping from a second launch. RegisterWindowMessage
+// returns the same value in every process for this string.
+UINT showExistingMsg() { static UINT m = RegisterWindowMessageW(L"DeGhoster_ShowExistingInstance"); return m; }
+}
+
+bool MainWindow::activateExisting()
+{
+    HWND h = FindWindowW(kClass, nullptr);
+    if (!h) return false;
+    PostMessageW(h, showExistingMsg(), 0, 0);
+    return true;
 }
 
 MainWindow::MainWindow() : engine_(settings_) {}
@@ -82,16 +95,25 @@ bool MainWindow::create(HINSTANCE inst)
     ChangeWindowMessageFilterEx(h, WM_DGH_CLOAKED, MSGFLT_ALLOW, nullptr);
     ChangeWindowMessageFilterEx(h, WM_DGH_UNCLOAKED, MSGFLT_ALLOW, nullptr);
 
+    // Shell broadcasts this when Explorer (re)starts; we re-add the tray icon so it
+    // doesn't vanish for good after an Explorer crash. Allow it through the filter
+    // in case we ever run elevated.
+    taskbarCreatedMsg_ = RegisterWindowMessageW(L"TaskbarCreated");
+    if (taskbarCreatedMsg_) ChangeWindowMessageFilterEx(h, taskbarCreatedMsg_, MSGFLT_ALLOW, nullptr);
+
     applyFont();
     settings_.load();
     addTray();
+    applyTheme();               // before ShowWindow, so the first paint has real colours
     ShowWindow(h, SW_SHOW);
     layout();
-    applyTheme();
     UpdateWindow(h);
 
     engine_.setListener(this);
     engine_.start(h);
+    // Backstop for cloak/uncloak requests the hook never answers: drop them so a
+    // window can't stay stuck in "pending" forever.
+    SetTimer(h, kPendingTimer, 1000, nullptr);
     updateStatus();
     return true;
 }
@@ -169,8 +191,18 @@ void MainWindow::layout()
     MoveWindow(exit_, rc.right - pad - btn, (band - btn) / 2, btn, btn, TRUE);
     MoveWindow(info_, rc.right - pad - 2 * btn - gap, (band - btn) / 2, btn, btn, TRUE);
     MoveWindow(list_, 0, band, rc.right, rc.bottom - band, TRUE);
+    sizeListColumns();
+}
+
+void MainWindow::sizeListColumns()
+{
+    if (!list_) return;
+    // Base the widths on the list's own client rect, which already excludes the
+    // vertical scrollbar. Using the window width instead made the columns overflow
+    // (and add a horizontal scrollbar clipping the eye) once rows scrolled.
+    RECT lc; GetClientRect(list_, &lc);
     int eye = S(54);
-    int wcol = (int)rc.right - eye - S(2);
+    int wcol = (lc.right - lc.left) - eye - S(2);
     if (wcol < S(120)) wcol = S(120);
     ListView_SetColumnWidth(list_, 0, wcol);
     ListView_SetColumnWidth(list_, 1, eye);
@@ -178,22 +210,46 @@ void MainWindow::layout()
 
 void MainWindow::rebuildList()
 {
+    // Remember the selected ghost so a rebuild (fired on every add/remove) doesn't
+    // drop the user's selection.
+    HWND selected = nullptr;
+    int sel = ListView_GetNextItem(list_, -1, LVNI_SELECTED);
+    if (sel >= 0) {
+        LVITEMW s{}; s.mask = LVIF_PARAM; s.iItem = sel;
+        if (ListView_GetItem(list_, &s)) selected = (HWND)s.lParam;
+    }
+
+    // tracked() is an unordered_map, so iteration order is unstable and rows would
+    // visibly reshuffle. Sort by label (then hwnd) for a stable, predictable list.
+    std::vector<std::pair<std::wstring, HWND>> rows;
+    rows.reserve(engine_.tracked().size());
+    for (auto& kv : engine_.tracked())
+        rows.push_back({ kv.second.title + L" (" + kv.second.exeName + L")", kv.first });
+    std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
+        int c = CompareStringOrdinal(a.first.c_str(), -1, b.first.c_str(), -1, TRUE);
+        return c ? c == CSTR_LESS_THAN : a.second < b.second;
+    });
+
     ListView_DeleteAllItems(list_);
-    for (auto& kv : engine_.tracked()) {
-        std::wstring text = kv.second.title + L" (" + kv.second.exeName + L")";
+    for (auto& r : rows) {
         LVITEMW it{}; it.mask = LVIF_PARAM | LVIF_TEXT;
         it.iItem = ListView_GetItemCount(list_);
-        it.lParam = (LPARAM)kv.first;
-        it.pszText = (LPWSTR)text.c_str();
-        ListView_InsertItem(list_, &it);
+        it.lParam = (LPARAM)r.second;
+        it.pszText = (LPWSTR)r.first.c_str();
+        int idx = ListView_InsertItem(list_, &it);
+        if (r.second == selected && idx >= 0) {
+            ListView_SetItemState(list_, idx, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+            ListView_EnsureVisible(list_, idx, FALSE);
+        }
     }
+    sizeListColumns();   // a new vertical scrollbar may have narrowed the client area
 }
 
 void MainWindow::updateStatus()
 {
     int n = engine_.ghostCount();
     wchar_t t[128];
-    wsprintfW(t, L"%s — %d %s", app::Name, n,
+    wsprintfW(t, L"%s \u2014 %d %s", app::Name, n,
               loc::t(n == 1 ? IDS_GHOST_SINGULAR : IDS_GHOST_PLURAL));
     SetWindowTextW(hwnd_, t);
     lstrcpynW(nid_.szTip, t, ARRAYSIZE(nid_.szTip));
@@ -314,6 +370,7 @@ void MainWindow::addTray()
     nid_.uID = 1;
     nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid_.uCallbackMessage = WM_TRAY;
+    if (nid_.hIcon) DestroyIcon(nid_.hIcon);   // re-add (TaskbarCreated) would else leak the old one
     nid_.hIcon = (HICON)LoadImageW(inst_, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
                                    GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
     lstrcpynW(nid_.szTip, app::Name, ARRAYSIZE(nid_.szTip));
@@ -349,11 +406,12 @@ void MainWindow::showTrayMenu()
 
     SetForegroundWindow(hwnd_);
     int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd_, nullptr);
+    PostMessageW(hwnd_, WM_NULL, 0, 0);   // KB135788: let the menu dismiss on click-away
     DestroyMenu(m);
 
     if (cmd == IDM_SHOW) showWindow();
     else if (cmd == IDM_ACTIVE) setGlobalEnabled(!on);
-    else if (cmd == IDM_INFO) InfoWindow::Show(inst_, hwnd_, theme_, dpi_, uiFont_);
+    else if (cmd == IDM_INFO) InfoWindow::Show(inst_, hwnd_, theme_, dpi_);
     else if (cmd == IDM_QUIT) { reallyExit_ = true; DestroyWindow(hwnd_); }
     else if (cmd >= IDM_WIN_BASE) {
         size_t i = cmd - IDM_WIN_BASE;
@@ -398,22 +456,45 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
     case WM_COMMAND:
         switch (LOWORD(wp)) {
         case IDC_POWER: setGlobalEnabled(!settings_.globalEnabled()); return 0;
-        case IDC_INFO:  InfoWindow::Show(inst_, hwnd_, theme_, dpi_, uiFont_); return 0;
+        case IDC_INFO:  InfoWindow::Show(inst_, hwnd_, theme_, dpi_); return 0;
         case IDC_EXIT:  reallyExit_ = true; DestroyWindow(hwnd_); return 0;
         }
         return 0;
 
     case WM_TRAY:
-        if (LOWORD(lp) == WM_LBUTTONDBLCLK) showWindow();
-        else if (LOWORD(lp) == WM_RBUTTONUP || LOWORD(lp) == WM_LBUTTONUP) showTrayMenu();
+        // Left click / double click restores the window; right click opens the menu.
+        // (Opening the menu on left-up made the double-click restore unreachable,
+        // because the first up already put up the modal menu.)
+        if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == WM_LBUTTONDBLCLK) showWindow();
+        else if (LOWORD(lp) == WM_RBUTTONUP) showTrayMenu();
         return 0;
 
     case WM_DGH_CLOAKED:   engine_.onCloaked((HWND)wp);   updateStatus(); return 0;
     case WM_DGH_UNCLOAKED: engine_.onUncloaked((HWND)wp); updateStatus(); return 0;
 
+    case WM_TIMER:
+        if (wp == kPendingTimer) engine_.expirePending();
+        return 0;
+
     case WM_SETTINGCHANGE:
-        applyTheme();
-        InvalidateRect(power_, nullptr, TRUE);
+        // Only a colour-scheme change needs a re-theme; re-applying on every
+        // settings broadcast is wasted work (and flickers the caption).
+        if (lp && lstrcmpiW((LPCWSTR)lp, L"ImmersiveColorSet") == 0) {
+            applyTheme();
+            InvalidateRect(power_, nullptr, TRUE);
+        }
+        return 0;
+
+    case WM_QUERYENDSESSION:
+        return TRUE;
+
+    case WM_ENDSESSION:
+        // Logoff/shutdown/Restart-Manager: unhook and uncloak before we're killed,
+        // so we don't leave the hook DLL locked in targets or windows cloaked.
+        if (wp) {
+            engine_.stop();
+            Shell_NotifyIconW(NIM_DELETE, &nid_);
+        }
         return 0;
 
     case WM_CLOSE:
@@ -422,9 +503,20 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         return 0;
 
     case WM_DESTROY:
+        KillTimer(hwnd_, kPendingTimer);
         engine_.stop();
         Shell_NotifyIconW(NIM_DELETE, &nid_);
+        if (nid_.hIcon) { DestroyIcon(nid_.hIcon); nid_.hIcon = nullptr; }
         PostQuitMessage(0);
+        return 0;
+    }
+    if (msg == taskbarCreatedMsg_ && taskbarCreatedMsg_) {
+        addTray();       // Explorer restarted: re-create our tray icon
+        updateStatus();
+        return 0;
+    }
+    if (msg == showExistingMsg()) {   // a second launch asked us to surface
+        showWindow();
         return 0;
     }
     return DefWindowProcW(hwnd_, msg, wp, lp);
