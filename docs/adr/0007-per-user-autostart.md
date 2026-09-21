@@ -24,7 +24,9 @@ CurrentVersion\Run`, never to HKLM:
   each user gets the entry in their own hive.
 
 The app owns the logic: `--register-autostart` / `--unregister-autostart` write/remove
-the current user's HKCU `Run` value (see `Autostart.cpp`).
+the current user's HKCU `Run` value (see `Autostart.cpp`). The value it writes runs
+the app with `--taskbar`, so the autostarted instance comes up hidden in the tray
+instead of opening the status window at sign-in.
 
 ## Consequences
 

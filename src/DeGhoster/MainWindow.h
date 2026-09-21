@@ -31,7 +31,9 @@ public:
     MainWindow();
     ~MainWindow();
 
-    bool create(HINSTANCE);
+    // startHidden keeps the main window in the tray on launch (used by autostart,
+    // via the --taskbar flag) instead of popping it open.
+    bool create(HINSTANCE, bool startHidden = false);
 
     // If an instance is already running, bring its window to the front. Returns
     // true if one was found (the new process should then exit).

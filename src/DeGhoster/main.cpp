@@ -17,6 +17,7 @@
 
 #include <windows.h>
 #include <commctrl.h>
+#include <shellapi.h>
 
 #include "Autostart.h"
 #include "Gfx.h"
@@ -39,6 +40,22 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int)
         return 0;
     }
 
+    // --taskbar: autostart launches with this so the app comes up in the tray
+    // instead of popping the main window open.
+    bool startHidden = false;
+    {
+        int argc = 0;
+        LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+        if (argv) {
+            for (int i = 1; i < argc; ++i)
+                if (lstrcmpiW(argv[i], L"--taskbar") == 0 || lstrcmpiW(argv[i], L"/taskbar") == 0) {
+                    startHidden = true;
+                    break;
+                }
+            LocalFree(argv);
+        }
+    }
+
     loc::init();
     gfx::GdiPlus gdiplus;
     INITCOMMONCONTROLSEX icc{ sizeof(icc),
@@ -46,7 +63,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int)
     InitCommonControlsEx(&icc);
 
     MainWindow window;
-    if (!window.create(inst)) return 1;
+    if (!window.create(inst, startHidden)) return 1;
 
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {

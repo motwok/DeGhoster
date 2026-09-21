@@ -108,7 +108,9 @@ per-window opt-outs (keyed by full executable path + window title). See
 DeGhoster starts at sign-in, registered **always per-user, never machine-wide**
 ([ADR-0007](adr/0007-per-user-autostart.md)). The portable ZIP does **not** register
 autostart; only the installer does. The app exposes `--register-autostart` /
-`--unregister-autostart` for the installer.
+`--unregister-autostart` for the installer. The Run entry it writes launches the app
+with **`--taskbar`**, which starts DeGhoster **hidden in the tray** (no status window)
+so sign-in is unobtrusive; the same switch works when launching the app directly.
 
 ## 7. User interface
 
