@@ -20,9 +20,9 @@
 // Segoe MDL2 Assets code points. EyeOff uses F78D, not ED1A ("Hide"), which is
 // absent on older MDL2 builds.
 namespace glyph {
-    inline constexpr wchar_t Power[]  = L"";
-    inline constexpr wchar_t Info[]   = L"";
-    inline constexpr wchar_t Exit[]   = L"";
-    inline constexpr wchar_t Eye[]    = L"";
-    inline constexpr wchar_t EyeOff[] = L"";
+    inline constexpr wchar_t Power[]  = L"\uE7E8";
+    inline constexpr wchar_t Info[]   = L"\uE946";
+    inline constexpr wchar_t Exit[]   = L"\uF3B1";
+    inline constexpr wchar_t Eye[]    = L"\uE7B3";
+    inline constexpr wchar_t EyeOff[] = L"\uF78D";
 }

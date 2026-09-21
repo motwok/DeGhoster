@@ -55,6 +55,14 @@ bool IsBlocker(HWND h)
     return true;
 }
 
+// A cloak/uncloak request whose reply never arrives (dead hook, hung thread, a
+// window that stopped qualifying) is dropped after this long, so pending_ can
+// never block a window's reconcile permanently.
+constexpr ULONGLONG kPendingTimeoutMs = 3000;
+// A host we failed to inject is retried after this cooldown instead of being
+// blacklisted for the whole session (the failure is often transient).
+constexpr ULONGLONG kBadPidCooldownMs = 15000;
+
 } // namespace
 
 GhostEngine* GhostEngine::s_instance = nullptr;
@@ -101,11 +109,22 @@ void GhostEngine::onWinEvent(DWORD event, HWND hwnd)
     handleCandidate(hwnd);
 }
 
+bool GhostEngine::isBadPid(DWORD pid)
+{
+    auto it = badPids_.find(pid);
+    if (it == badPids_.end()) return false;
+    if (GetTickCount64() - it->second >= kBadPidCooldownMs) {
+        badPids_.erase(it);   // cooldown elapsed: allow a retry
+        return false;
+    }
+    return true;
+}
+
 void GhostEngine::handleCandidate(HWND h)
 {
     if (tracked_.count(h) || !IsBlocker(h)) return;
     DWORD pid = 0, tid = GetWindowThreadProcessId(h, &pid);
-    if (!tid || badPids_.count(pid)) return;
+    if (!tid || isBadPid(pid)) return;
 
     FixInfo fi;
     fi.pid = pid;
@@ -133,14 +152,26 @@ void GhostEngine::reconcile(HWND h)
     if (desired && !isCloaked) {
         DWORD pid = 0, tid = GetWindowThreadProcessId(h, &pid);
         if (tid && hooks_.ensure(tid, pid, host_)) {
-            pending_.insert(h);
-            PostMessageW(h, DGH_CLOAK, 0, 0);
+            if (PostMessageW(h, DGH_CLOAK, 0, 0))
+                pending_[h] = GetTickCount64();
         } else if (tid) {
-            badPids_.insert(pid);
+            badPids_[pid] = GetTickCount64();
         }
     } else if (!desired && isCloaked) {
-        pending_.insert(h);
-        PostMessageW(h, DGH_UNCLOAK, 0, 0);
+        if (PostMessageW(h, DGH_UNCLOAK, 0, 0))
+            pending_[h] = GetTickCount64();
+    }
+}
+
+void GhostEngine::expirePending()
+{
+    ULONGLONG now = GetTickCount64();
+    std::vector<HWND> stale;
+    for (auto& kv : pending_)
+        if (now - kv.second >= kPendingTimeoutMs) stale.push_back(kv.first);
+    for (HWND h : stale) {
+        pending_.erase(h);
+        reconcile(h);   // no reply came; re-evaluate (a live window will be retried)
     }
 }
 
@@ -155,6 +186,9 @@ void GhostEngine::refreshAll()
 void GhostEngine::onCloaked(HWND h)
 {
     pending_.erase(h);
+    // A reply can arrive after the window was destroyed and untracked; don't
+    // resurrect a stale HWND in cloaked_ (it would never be cleaned up).
+    if (!tracked_.count(h) || !IsWindow(h)) { cloaked_.erase(h); return; }
     cloaked_.insert(h);
     reconcile(h);   // re-check: state may have flipped while the reply was in flight
 }

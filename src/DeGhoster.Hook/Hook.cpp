@@ -37,6 +37,8 @@ static CRITICAL_SECTION g_lock;
 static bool g_lockInit = false;
 static std::vector<HWND>* g_cloaked = nullptr;
 
+// Initialized once in DLL_PROCESS_ATTACH (single-threaded per the loader), so the
+// hook callbacks that run on several target threads never race to initialize it.
 static void EnsureInit()
 {
     if (!g_lockInit)
@@ -45,6 +47,15 @@ static void EnsureInit()
         g_cloaked = new std::vector<HWND>();
         g_lockInit = true;
     }
+}
+
+// Drop handles whose windows are gone (recycled HWND values would otherwise read
+// as "still tracked"). Caller must hold g_lock.
+static void PurgeDead()
+{
+    g_cloaked->erase(std::remove_if(g_cloaked->begin(), g_cloaked->end(),
+                                    [](HWND h) { return !IsWindow(h); }),
+                     g_cloaked->end());
 }
 
 static bool IsTracked(HWND h)
@@ -66,7 +77,9 @@ static bool QualifiesAsGhost(HWND hwnd)
     if (ex & WS_EX_TRANSPARENT) return false;
     BYTE alpha = 255; COLORREF cr = 0; DWORD fl = 0;
     if (!GetLayeredWindowAttributes(hwnd, &cr, &alpha, &fl)) return false;
-    return alpha == 0;
+    // Require the alpha flag: a colour-key-only layered window can report alpha 0
+    // without actually being transparent, and must not be cloaked.
+    return (fl & LWA_ALPHA) && alpha == 0;
 }
 
 static void DoCloak(HWND hwnd)
@@ -74,6 +87,7 @@ static void DoCloak(HWND hwnd)
     if (!g_active) return;
     EnsureInit();
     EnterCriticalSection(&g_lock);
+    PurgeDead();
     bool notify = false;
     if (!IsTracked(hwnd) && QualifiesAsGhost(hwnd))
     {
@@ -128,17 +142,22 @@ extern "C" BOOL __stdcall DgRemoveHook(HHOOK hook)
     return hook ? UnhookWindowsHookEx(hook) : FALSE;
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
 {
     switch (reason)
     {
         case DLL_PROCESS_ATTACH:
             if (g_appInstance == NULL) g_appInstance = hModule;
             DisableThreadLibraryCalls(hModule);
+            EnsureInit();   // do it here, under the loader's single-thread guarantee
             break;
 
         case DLL_PROCESS_DETACH:
-            if (g_lockInit && g_cloaked)
+            // lpReserved != NULL means the whole process is terminating: the windows
+            // are being destroyed anyway, and calling cross-process DWM under the
+            // loader lock then risks a deadlock. Only uncloak on a real FreeLibrary
+            // (dynamic unload after the hook is removed), where lpReserved == NULL.
+            if (lpReserved == NULL && g_lockInit && g_cloaked)
             {
                 EnterCriticalSection(&g_lock);
                 for (HWND h : *g_cloaked) if (IsWindow(h)) SetCloak(h, FALSE);

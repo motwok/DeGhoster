@@ -30,6 +30,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int)
     if (autostart::handleCommandLine(&autostartExit))
         return autostartExit;
 
+    // Single instance: a second launch (e.g. autostart + a manual start) would give
+    // two tray icons and two engines fighting over the same windows. Hand off to the
+    // running instance and exit. The mutex is released automatically on exit.
+    HANDLE instanceMutex = CreateMutexW(nullptr, TRUE, L"Local\\DeGhoster.SingleInstance");
+    if (instanceMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
+        MainWindow::activateExisting();
+        return 0;
+    }
+
     loc::init();
     gfx::GdiPlus gdiplus;
     INITCOMMONCONTROLSEX icc{ sizeof(icc),
