@@ -18,11 +18,11 @@ include("${CMAKE_SOURCE_DIR}/cmake/Version.cmake")
 # Test ghost-window simulator (built for both bitnesses; not shipped).
 option(DEGHOSTER_BUILD_TESTS "Build the GhostSim test simulator (x86 + x64)" ON)
 
-# Native Hook-DLL (Bitness = Plattform des Configure-Schritts).
+# Native hook DLL (bitness = platform of the configure step).
 add_subdirectory(src/DeGhoster.Hook)
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-  # x86-Configure: 32-Bit-Injektor (der x64-Host startet ihn fuer 32-Bit-Ziele).
+  # x86 configure: 32-bit injector (the x64 host launches it for 32-bit targets).
   add_subdirectory(src/DeGhoster.Helper32)
 else()
   # x64 configure: the host plus the satellite MUI resource DLLs.

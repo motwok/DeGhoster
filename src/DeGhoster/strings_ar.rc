@@ -35,4 +35,5 @@ BEGIN
     IDS_INFO_LICENSE    "الترخيص: GNU AGPL v3"
     IDS_INFO_SUPPORT    "إذا وجدت هذا المشروع مفيدًا، ففكّر في دعمه:"
     IDS_INFO_THIRDPARTY "إشعارات الأطراف الثالثة / الترخيص"
+    IDS_COL_WINDOW      "نافذة (ملف تنفيذي)"
 END

@@ -20,12 +20,12 @@
 
 #include <windows.h>
 
-// Host -> DLL: an ein konkretes Fenster gepostete Kommandos (WM_APP-Bereich).
-// Der WH_GETMESSAGE-Hook faengt sie ab (m->hwnd = Zielfenster) und fuehrt sie IN-PROCESS aus.
+// Host -> DLL: commands posted to a specific window (WM_APP range).
+// The WH_GETMESSAGE hook intercepts them (m->hwnd = target window) and runs them IN-PROCESS.
 #define DGH_CLOAK          (WM_APP + 0x10)
 #define DGH_UNCLOAK        (WM_APP + 0x11)
 
-// DLL -> Host: Statusmeldungen (wParam = HWND).
+// DLL -> Host: status messages (wParam = HWND).
 #define WM_DGH_CLOAKED     (WM_APP + 0x20)
 #define WM_DGH_UNCLOAKED   (WM_APP + 0x21)
 

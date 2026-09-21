@@ -142,11 +142,11 @@ void MainWindow::onCreate()
     ui::EnableHover(exit_);
 
     list_ = CreateWindowExW(0, WC_LISTVIEWW, L"",
-                            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_NOSORTHEADER | LVS_NOCOLUMNHEADER,
+                            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_NOSORTHEADER,
                             0, 0, 0, 0, hwnd_, (HMENU)IDC_LIST, inst_, nullptr);
     ListView_SetExtendedListViewStyle(list_, LVS_EX_DOUBLEBUFFER);
     LVCOLUMNW col{}; col.mask = LVCF_TEXT | LVCF_WIDTH;
-    col.pszText = (LPWSTR)L"Fenster"; col.cx = S(300); ListView_InsertColumn(list_, 0, &col);
+    col.pszText = (LPWSTR)loc::t(IDS_COL_WINDOW); col.cx = S(300); ListView_InsertColumn(list_, 0, &col);
     col.mask |= LVCF_FMT; col.fmt = LVCFMT_CENTER; col.pszText = (LPWSTR)L""; col.cx = S(54);
     ListView_InsertColumn(list_, 1, &col);
 }

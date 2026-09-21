@@ -1,5 +1,5 @@
 @echo off
-REM Baut beide Bitness-Varianten der Hook-DLL nach bin\, je in isolierter vcvars-Umgebung.
+REM Builds both bitness variants of the hook DLL into bin\, each in an isolated vcvars environment.
 cd /d "%~dp0"
 
 cmd /c "%~dp0build64.cmd"

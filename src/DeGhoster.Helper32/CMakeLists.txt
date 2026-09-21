@@ -1,4 +1,4 @@
-# 32-Bit-Injektor (nur im x86-Configure gebaut).
+# 32-bit injector (built only in the x86 configure).
 add_executable(DeGhoster.Helper32 WIN32 Helper.cpp res_version.rc)
 set_target_properties(DeGhoster.Helper32 PROPERTIES OUTPUT_NAME "DeGhoster.Helper32")
 target_compile_definitions(DeGhoster.Helper32 PRIVATE UNICODE _UNICODE)

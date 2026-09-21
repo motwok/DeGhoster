@@ -68,15 +68,14 @@ That's it. From now on DeGhoster catches ghost windows on its own.
 The ghost icon in the tray is your control center:
 
 - **Click it** (left or right) to open the menu.
-- **Double-click it** to open the status window (the bold *Statusfenster* entry is the same
+- **Double-click it** to open the status window (the bold *Status Window* entry is the same
   thing).
 
 ## The status window
 
 The status window shows every ghost window DeGhoster currently knows about, one per line, as
 **Window title (program)** — for example `WhatsApp (WhatsApp.Root.exe)`. The window's title
-bar tells you how many it's handling, e.g. *DeGhoster — 2 Geister* ("Geister" is German for
-"ghosts").
+bar tells you how many it's handling, e.g. *DeGhoster — 2 Ghosts*.
 
 Each line has a small **eye icon** on the right:
 
@@ -106,7 +105,7 @@ support the project. Nothing changes on your system when you open it.
 
 DeGhoster is meant to stay running in the background, so **closing the status window only hides
 it back to the tray**. To actually quit, use the **Exit** button (the door icon) in the
-toolbar or **Beenden** in the tray menu. When it quits, every window it had neutralized is
+toolbar or **Exit** in the tray menu. When it quits, every window it had neutralized is
 restored to normal automatically.
 
 ## It remembers your choices

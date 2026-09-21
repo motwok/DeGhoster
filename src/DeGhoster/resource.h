@@ -34,3 +34,4 @@
 #define IDS_INFO_LICENSE     2012
 #define IDS_INFO_SUPPORT     2013
 #define IDS_INFO_THIRDPARTY  2014
+#define IDS_COL_WINDOW       2015

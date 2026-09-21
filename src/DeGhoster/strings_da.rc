@@ -35,4 +35,5 @@ BEGIN
     IDS_INFO_LICENSE    "Licens: GNU AGPL v3"
     IDS_INFO_SUPPORT    "Hvis du finder dette projekt nyttigt, så overvej at støtte det:"
     IDS_INFO_THIRDPARTY "Tredjepartsmeddelelser / licens"
+    IDS_COL_WINDOW      "Vindue (Program)"
 END

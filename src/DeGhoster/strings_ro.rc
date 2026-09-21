@@ -35,4 +35,5 @@ BEGIN
     IDS_INFO_LICENSE    "Licență: GNU AGPL v3"
     IDS_INFO_SUPPORT    "Dacă acest proiect îți este util, ia în considerare susținerea lui:"
     IDS_INFO_THIRDPARTY "Notificări terțe / licență"
+    IDS_COL_WINDOW      "Fereastră (Executabil)"
 END

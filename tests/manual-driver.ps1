@@ -27,8 +27,8 @@ Write-Host "DeGhoster is running (two ghost windows are present)." -ForegroundCo
 Write-Host "Perform each action, then press Enter. Take your time." -ForegroundColor Green
 
 if (-not $DpiOnly) {
-    Step 1 "TRAY MENU: right-click the DeGhoster tray icon. Open 'Statusfenster', toggle 'Aktiv' off and on, and click one per-window entry in the menu to toggle it."
-    Step 2 "INFO via menu: right-click the tray icon -> 'Info'. Then close the Info window."
+    Step 1 "TRAY MENU: right-click the DeGhoster tray icon. Open 'Status Window', toggle 'Active' off and on, and click one per-window entry in the menu to toggle it."
+    Step 2 "INFO via menu: right-click the tray icon -> 'About'. Then close the Info window."
     Step 3 "PER-WINDOW EYE: double-click the tray icon to open the status window. Click the eye on a list row (turns it off), then click it again (on)."
 }
 Step 4 "DPI CHANGE: change the Windows display scaling (Settings -> System -> Display -> Scale) and apply it, OR drag the DeGhoster status window onto a monitor with a different scaling. (Open the status window first via a double-click on the tray icon so it receives the DPI change.)"
