@@ -20,7 +20,8 @@ public class LifecycleTests
     private const uint WM_ENDSESSION = 0x0016, WM_QUERYENDSESSION = 0x0011;
     private const uint WM_DPICHANGED = 0x02E0, WM_SETTINGCHANGE = 0x001A, WM_COMMAND = 0x0111;
     private const string InfoClass = "DeGhosterInfoWindow";
-    private const int IDC_INFO = 1003, IDOK = 1;
+    private const int IDC_INFO = 1003, IDC_POWER = 1002, IDOK = 1;
+    private const uint THREAD_SUSPEND_RESUME = 0x0002;
 
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int left, top, right, bottom; }
 
@@ -245,6 +246,69 @@ public class LifecycleTests
         finally { Cleanup(dg, null); }
     }
 
+    [Fact]
+    public void A_hung_target_does_not_wedge_the_engine()
+    {
+        string build = FindBuildDir();
+        EnsureGlobalEnabled();
+        string title = "DGHHUNG-" + Guid.NewGuid().ToString("N");
+        Process? sim = null, dg = null;
+        bool suspended = false;
+        try
+        {
+            sim = Start(Path.Combine(build, "GhostSim64.exe"), $"--title \"{title}\" --timeout 180", build);
+            IntPtr ghost = WaitFor(() => FindWindow(GhostClass, title), TimeSpan.FromSeconds(8));
+            Assert.True(ghost != IntPtr.Zero, "the ghost simulator window was not found");
+
+            dg = Start(Path.Combine(build, "DeGhoster.exe"), "", build);
+            IntPtr host = WaitFor(() => FindWindow(HostClass, null), TimeSpan.FromSeconds(15));
+            Assert.True(host != IntPtr.Zero, "the host window never appeared");
+            Assert.True(WaitUntil(() => Cloaked(ghost) != 0, TimeSpan.FromSeconds(25)), "the ghost was not cloaked");
+
+            // Freeze the target: the hook lives on its thread, so with the thread
+            // suspended nothing will ever answer a cloak command. This is the case
+            // the whole design is built around - every command is posted, never
+            // sent, so a wedged target must not take the host with it.
+            Suspend(sim); suspended = true;
+
+            // Ask for a state change the target now cannot carry out.
+            PostMessage(host, WM_COMMAND, (IntPtr)IDC_POWER, IntPtr.Zero);
+
+            // Longer than the 3s pending timeout, so the unanswered request has to
+            // be expired and re-driven at least twice.
+            Thread.Sleep(8000);
+            Assert.False(dg.HasExited, "the host died while its target was hung");
+            Assert.True(IsWindow(host), "the host window was lost while its target was hung");
+            Assert.NotEqual(0, Cloaked(ghost));   // frozen: still exactly as it was
+
+            // Thaw it: the retry that expirePending keeps re-driving now gets through.
+            Resume(sim); suspended = false;
+            Assert.True(WaitUntil(() => Cloaked(ghost) == 0, TimeSpan.FromSeconds(20)),
+                        "the engine did not catch up once the target responded again");
+        }
+        finally
+        {
+            if (suspended && sim != null) { try { Resume(sim); } catch { } }
+            Cleanup(dg, sim);
+        }
+    }
+
+    // Suspending every thread is the documented way; there is no public
+    // SuspendProcess. A suspended process can still be terminated, so cleanup works.
+    private static void Suspend(Process p) => EachThread(p, h => SuspendThread(h));
+    private static void Resume(Process p) => EachThread(p, h => { while (ResumeThread(h) > 1) { } });
+
+    private static void EachThread(Process p, Action<IntPtr> act)
+    {
+        p.Refresh();
+        foreach (ProcessThread t in p.Threads)
+        {
+            IntPtr h = OpenThread(THREAD_SUSPEND_RESUME, false, (uint)t.Id);
+            if (h == IntPtr.Zero) continue;
+            try { act(h); } finally { CloseHandle(h); }
+        }
+    }
+
     private static Process[] Helpers() =>
         Process.GetProcessesByName("DeGhoster.Helper32")
                .Concat(Process.GetProcessesByName("DeGhoster.Helper64"))
@@ -313,4 +377,12 @@ public class LifecycleTests
     private static extern bool GetWindowRect(IntPtr hwnd, out RECT rc);
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr OpenThread(uint access, bool inherit, uint threadId);
+    [DllImport("kernel32.dll")]
+    private static extern uint SuspendThread(IntPtr thread);
+    [DllImport("kernel32.dll")]
+    private static extern int ResumeThread(IntPtr thread);
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr handle);
 }
