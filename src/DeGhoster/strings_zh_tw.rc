@@ -36,5 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "如果您覺得這個專案有幫助，歡迎支持："
     IDS_INFO_THIRDPARTY "第三方聲明 / 授權"
     IDS_COL_WINDOW      "視窗（可執行檔）"
-    IDS_HOOK_MISSING    "無法載入 DeGhoster.Hook64.dll。64 位元應用程式中的幽靈視窗無法修復。"
+    IDS_HOOK_MISSING    "缺少必要的 DeGhoster 元件，無法修復幽靈視窗。請重新安裝 DeGhoster。"
 END

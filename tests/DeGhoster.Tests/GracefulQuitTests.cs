@@ -44,16 +44,20 @@ public class GracefulQuitTests
 
             Assert.True(dg.WaitForExit(10000), "DeGhoster did not exit after the Exit command");
             Assert.Equal(0, dg.ExitCode);
-            // Graceful exit runs GhostEngine/HookInjector teardown (removeAll ->
-            // DgRemoveHook, helper cleanup). We don't assert the window un-cloaks
-            // here: the DLL only unloads (and auto-uncloaks) once the target
-            // pumps messages, which an idle GhostSim doesn't; the in-process
-            // detach/un-cloak path is covered deterministically by UnitTests.exe.
+            // Graceful exit runs GhostEngine/HookInjector teardown: stop() reveals
+            // still-cloaked windows and waits for the DWM state, then the helpers
+            // are asked to wind down (unhook + FreeLibrary + nudge the target).
+            // The un-cloak is not asserted here because it needs the target to pump
+            // messages within the budget; UnitTests.exe covers the cloak/un-cloak
+            // contract deterministically.
         }
         finally
         {
             Kill(dg);
-            foreach (var p in Process.GetProcessesByName("DeGhoster.Helper32")) Kill(p);
+            // Either bitness can be in play; the host injects through a helper
+            // matching the target process (see ADR-0011).
+            foreach (var n in new[] { "DeGhoster.Helper32", "DeGhoster.Helper64" })
+                foreach (var p in Process.GetProcessesByName(n)) Kill(p);
             Kill(sim);
         }
     }

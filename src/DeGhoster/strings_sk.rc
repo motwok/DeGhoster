@@ -36,5 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Ak je tento projekt pre vás užitočný, zvážte jeho podporu:"
     IDS_INFO_THIRDPARTY "Oznámenia tretích strán / licencia"
     IDS_COL_WINDOW      "Okno (Program)"
-    IDS_HOOK_MISSING    "Nepodarilo sa načítať DeGhoster.Hook64.dll. Okná duchov v 64-bitových aplikáciách nemožno opraviť."
+    IDS_HOOK_MISSING    "Chýba potrebný komponent DeGhoster, takže okná duchov nemožno opraviť. Preinštalujte prosím DeGhoster."
 END

@@ -36,5 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "אם הפרויקט שימושי עבורך, שקול לתמוך בו:"
     IDS_INFO_THIRDPARTY "הודעות צד שלישי / רישיון"
     IDS_COL_WINDOW      "חלון (קובץ הפעלה)"
-    IDS_HOOK_MISSING    "לא ניתן לטעון את DeGhoster.Hook64.dll. לא ניתן לתקן חלונות רפאים ביישומי 64 סיביות."
+    IDS_HOOK_MISSING    "חסר רכיב נדרש של DeGhoster, ולכן לא ניתן לתקן חלונות רפאים. נא להתקין את DeGhoster מחדש."
 END

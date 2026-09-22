@@ -38,7 +38,7 @@ src/Version.h.in          template for the version resource (generates Version.h
 src/version.rc            shared VERSIONINFO for every binary
 src/DeGhoster/            Win32 host (C++)
 src/DeGhoster.Hook/       hook DLL (x64 + x86)
-src/DeGhoster.Helper32/   32-bit injector
+src/DeGhoster.Helper/     injector helper (x64 + x86)
 src/DeGhoster.Lang/       per-language resource sources (muirct inputs)
 packaging/                WiX MSI source + ZIP/MSI scripts
 build/                    all build artifacts (gitignored)
@@ -86,7 +86,8 @@ Both workflows write centrally to `build\`. The self-contained runtime set:
 build\DeGhoster.exe                  host (x64, language-neutral)
 build\DeGhoster.Hook64.dll           64-bit hook
 build\DeGhoster.Hook32.dll           32-bit hook
-build\DeGhoster.Helper32.exe         32-bit injector
+build\DeGhoster.Helper32.exe         32-bit injector helper
+build\DeGhoster.Helper64.exe         64-bit injector helper
 build\LICENSE.txt  build\NOTICE.txt  license / third-party notices
 build\<culture>\DeGhoster.exe.mui    one language file per UI language (en-US = fallback)
 ```
@@ -144,7 +145,7 @@ Integration tests live in `tests/` and prove the actual neutralization end to en
   `GhostSim32.exe`) creates a real ghost window matching every `IsBlocker` criterion.
 - **`tests/DeGhoster.Tests`** (xUnit, .NET) launches GhostSim + DeGhoster and asserts
   the window becomes `DWMWA_CLOAKED`. The `[Theory]` runs both bitnesses, so it covers
-  the x64 (Hook64 direct) and x86 (Helper32 → Hook32) injection paths.
+  the x64 (Helper64 → Hook64) and x86 (Helper32 → Hook32) injection paths.
 
 Build first, then run the tests:
 
@@ -172,7 +173,7 @@ choco install opencppcoverage   # one-time
 
 The report lands in `coverage\` (Cobertura XML + browsable HTML at
 `coverage\html\index.html`). Coverage counts the C++ code in `src\` executed
-across DeGhoster, the hooks and Helper32. The automated run reaches ~90 % of
+across DeGhoster, the hooks and the helpers. The automated run reaches ~90 % of
 `src\`; what it can't reach robustly is the modal tray menu, the per-window eye
 click, DPI-change handling, the 32-bit helper's teardown (an orphaned-process
 tooling limit) and defensive API-failure branches.

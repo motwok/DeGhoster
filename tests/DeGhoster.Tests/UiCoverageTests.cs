@@ -197,7 +197,8 @@ public class UiCoverageTests
     private static void Cleanup(Process? dg, Process? sim)
     {
         try { if (dg is { HasExited: false }) dg.Kill(entireProcessTree: true); } catch { }
-        foreach (var p in Process.GetProcessesByName("DeGhoster.Helper32")) { try { p.Kill(); } catch { } }
+        foreach (var n in new[] { "DeGhoster.Helper32", "DeGhoster.Helper64" })
+            foreach (var p in Process.GetProcessesByName(n)) { try { p.Kill(); } catch { } }
         try { if (sim is { HasExited: false }) sim.Kill(); } catch { }
     }
 

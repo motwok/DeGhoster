@@ -9,7 +9,7 @@
 DeGhoster's core value is neutralizing ghost windows, which involves cross-process
 DLL injection and an in-process DWM cloak — behavior that unit tests of isolated
 functions cannot meaningfully cover. We need a test that proves the real thing works,
-for **both** the x64 (Hook64 direct) and x86 (Helper32 → Hook32) paths.
+for **both** the x64 (Helper64 → Hook64) and x86 (Helper32 → Hook32) paths.
 
 `GhostEngine::IsBlocker` classifies ghosts purely by window properties (class
 `Chrome_WidgetWin_1`, layered, alpha 0 + `LWA_ALPHA`, on-screen, not cloaked) — it does

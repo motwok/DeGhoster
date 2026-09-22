@@ -14,7 +14,7 @@ public class NeutralizationTests
     private const int DWMWA_CLOAKED = 14;
 
     [Theory]
-    [InlineData("64")]  // x64 ghost -> Hook64 injected directly
+    [InlineData("64")]  // x64 ghost -> Helper64 injects Hook64
     [InlineData("32")]  // x86 ghost -> Helper32 injects Hook32
     public void DeGhoster_neutralizes_ghost_window(string bits)
     {
@@ -43,19 +43,25 @@ public class NeutralizationTests
         }
         finally
         {
-            // Kill ONLY the host (not the process tree): Helper32 then notices
+            // Kill ONLY the host (not the process tree): the helper then notices
             // the host handle signal and runs its own cleanup (unhook +
             // FreeLibrary) before exiting. Killing the tree would take the helper
             // down with it and skip that path.
             try { if (dg is { HasExited: false }) dg.Kill(entireProcessTree: false); } catch { }
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-            while (DateTime.UtcNow < deadline &&
-                   Process.GetProcessesByName("DeGhoster.Helper32").Length > 0)
+            while (DateTime.UtcNow < deadline && HelperProcesses().Length > 0)
                 Thread.Sleep(100);
-            foreach (var p in Process.GetProcessesByName("DeGhoster.Helper32")) Kill(p);
+            foreach (var p in HelperProcesses()) Kill(p);
             Kill(sim);
         }
     }
+
+    // Either bitness can be in play: the host injects through a helper matching
+    // the target process, so both names have to be reaped (see ADR-0011).
+    private static Process[] HelperProcesses() =>
+        Process.GetProcessesByName("DeGhoster.Helper32")
+               .Concat(Process.GetProcessesByName("DeGhoster.Helper64"))
+               .ToArray();
 
     private static string FindBuildDir()
     {

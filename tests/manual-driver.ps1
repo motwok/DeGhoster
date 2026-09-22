@@ -39,7 +39,7 @@ if (-not $DpiOnly) {
 Start-Sleep -Seconds 2   # let Helper32 self-clean under coverage
 
 try { if (-not $dg.HasExited) { $dg.Kill() } } catch { }
-Get-Process DeGhoster.Helper32 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process DeGhoster.Helper32,DeGhoster.Helper64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 foreach ($p in @($g64, $g32)) { try { if (-not $p.HasExited) { $p.Kill() } } catch { } }
 
 Write-Host "Done - writing coverage." -ForegroundColor Green

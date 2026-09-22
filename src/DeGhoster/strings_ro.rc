@@ -36,5 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Dacă acest proiect îți este util, ia în considerare susținerea lui:"
     IDS_INFO_THIRDPARTY "Notificări terțe / licență"
     IDS_COL_WINDOW      "Fereastră (Executabil)"
-    IDS_HOOK_MISSING    "Nu s-a putut încărca DeGhoster.Hook64.dll. Ferestrele fantomă din aplicațiile pe 64 de biți nu pot fi remediate."
+    IDS_HOOK_MISSING    "Lipsește o componentă necesară DeGhoster, deci ferestrele fantomă nu pot fi remediate. Reinstalați DeGhoster."
 END

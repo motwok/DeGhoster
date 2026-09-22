@@ -36,5 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "إذا وجدت هذا المشروع مفيدًا، ففكّر في دعمه:"
     IDS_INFO_THIRDPARTY "إشعارات الأطراف الثالثة / الترخيص"
     IDS_COL_WINDOW      "نافذة (ملف تنفيذي)"
-    IDS_HOOK_MISSING    "تعذّر تحميل DeGhoster.Hook64.dll. لا يمكن إصلاح النوافذ الشبحية في التطبيقات 64 بت."
+    IDS_HOOK_MISSING    "يفتقد DeGhoster مكوّنًا مطلوبًا، لذا لا يمكن إصلاح النوافذ الشبحية. يُرجى إعادة تثبيت DeGhoster."
 END

@@ -20,7 +20,8 @@ flowchart TB
         Inj["HookInjector"]
     end
 
-    Helper["DeGhoster.Helper32.exe (x86)"]
+    Helper64["DeGhoster.Helper64.exe (x64)"]
+    Helper32["DeGhoster.Helper32.exe (x86)"]
 
     subgraph T64["Ghost host process (x64)"]
         H64["DeGhoster.Hook64.dll<br/>WH_GETMESSAGE, DWMWA_CLOAK"]
@@ -48,7 +49,8 @@ flowchart TB
 | `DeGhoster` | native Win32 C++ exe (x64) | detection, UI, tray, orchestration |
 | `DeGhoster.Hook64.dll` | native C++ (x64) | in-process cloak for x64 targets |
 | `DeGhoster.Hook32.dll` | native C++ (x86) | in-process cloak for x86 targets |
-| `DeGhoster.Helper32.exe` | native C++ (x86) | injects Hook32 into 32-bit targets |
+| `DeGhoster.Helper64.exe` | native C++ (x64) | injects Hook64 into 64-bit targets, watchdogs the hook |
+| `DeGhoster.Helper32.exe` | native C++ (x86) | injects Hook32 into 32-bit targets, watchdogs the hook |
 | `<culture>\DeGhoster.exe.mui` | resource-only | localized `STRINGTABLE` per UI language (MUI satellite) |
 
 ## Host source modules (`src/DeGhoster/`)
@@ -63,7 +65,7 @@ with no shared mutable state beyond the win-event thunk's single-instance pointe
 | `MainWindow` | tray app and status window: toolbar, list, tray menu; owns theme/settings/engine, implements `GhostEngine::Listener` |
 | `InfoWindow` | dark-mode "About" popup (modeless, single-instance) |
 | `GhostEngine` | detection + cloak + reconcile core, driven by `SetWinEventHook` |
-| `HookInjector` | loads the hook DLL, injects it per target thread (x64 directly, x86 via Helper32) |
+| `HookInjector` | starts a helper of the target's bitness per target thread and tracks its lifetime |
 | `Autostart` | per-user HKCU `Run` register/unregister (installer hooks) |
 | `Settings` | registry persistence (global switch, per-window opt-outs) |
 | `Theme` | color set, OS light/dark detection, immersive dark title bar |
@@ -131,15 +133,25 @@ in-process and replies to the host window.
 The DLL re-checks the ghost criteria before cloaking and auto-uncloaks all tracked
 windows on `DLL_PROCESS_DETACH`.
 
-## Bitness ([ADR-0005](adr/0005-separate-32bit-helper.md))
+## Bitness ([ADR-0011](adr/0011-helper-per-bitness.md))
 
-- **x64 target:** host calls `DgInstallHook(threadId, hostHwnd)` (Hook64) directly.
-- **x86 target:** an x64 process cannot load a 32-bit DLL, so the host starts
-  `DeGhoster.Helper32.exe <threadId> <hostHwnd> <hostPid>`. The helper loads Hook32,
-  installs the hook, and holds it until the host process exits (then `DgRemoveHook` +
-  quit).
-- Hooks are deduplicated per **thread id**; one helper is spawned per hooked 32-bit
-  thread.
+The host never loads a hook DLL itself. Every target is injected the same way, only
+the helper differs:
+
+- The host starts `DeGhoster.Helper<bits>.exe <threadId> <hostHwnd> <hostPid>`, picked
+  by the target's bitness (`IsWow64Process`), because a hook DLL must match the
+  bitness of the thread it is installed on.
+- The helper loads the matching hook DLL, installs the hook and signals
+  `Local\DeGhoster.HelperReady.<hostPid>.<threadId>`; only then does the host post
+  `DGH_CLOAK`, so the command cannot arrive before the hook is live.
+- The helper then waits on **both** the host process and the hooked thread. When
+  either ends it removes the hook, nudges the target so the loader unmaps the DLL, and
+  quits — so a hard-killed host leaves nothing behind.
+- Because the hook is not live when the helper is started, `ensure()` reports
+  `Ready`/`Pending`/`Failed` and the periodic tick re-drives whatever is pending,
+  instead of blocking the UI thread.
+- Hooks are deduplicated per **thread id** (pinned to the thread's creation time, so a
+  recycled id is not mistaken for a live hook); one helper per hooked thread.
 
 ## Host-program name resolution
 

@@ -135,6 +135,9 @@
       <Component Id="cmp_helper32">
         <File Source="$(var.StageDir)\DeGhoster.Helper32.exe" />
       </Component>
+      <Component Id="cmp_helper64">
+        <File Source="$(var.StageDir)\DeGhoster.Helper64.exe" />
+      </Component>
       <Component Id="cmp_license">
         <File Source="$(var.StageDir)\LICENSE.txt" />
       </Component>

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // VERSIONINFO for the 32-bit injector. Shared body lives in src/version.rc.
 #define VER_FILETYPE             VFT_APP
-#define VER_INTERNALNAME_STR     "DeGhoster.Helper32"
-#define VER_ORIGINALFILENAME_STR "DeGhoster.Helper32.exe"
-#define VER_FILEDESCRIPTION_STR  "DeGhoster 32-bit injector helper"
+#define VER_INTERNALNAME_STR     "DeGhoster.Helper"
+#define VER_ORIGINALFILENAME_STR "DeGhoster.Helper.exe"
+#define VER_FILEDESCRIPTION_STR  "DeGhoster injector helper (window cloak)"
 #include "../version.rc"

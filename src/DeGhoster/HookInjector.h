@@ -20,43 +20,47 @@
 #include <string>
 #include <unordered_map>
 
-// Injects the cloaking hook (DWMWA_CLOAK must run in-process): x64 targets via
-// the loaded Hook64 DLL, x86 targets via the Helper32 process. Deduped per thread.
+// Installs the cloaking hook into target threads. DWMWA_CLOAK only takes effect
+// in-process, so the work has to happen inside the target.
+//
+// The host never loads a hook DLL itself. Every injection goes through a helper
+// process of the target's bitness, which owns the LoadLibrary and the hook. That
+// buys one code path instead of two, and gives every hook a watchdog: the helper
+// waits on the host and on the hooked thread, so the hook is removed even if the
+// host dies without running its own teardown. Deduped per thread.
 class HookInjector {
 public:
     ~HookInjector();
 
-    // Outcome of ensure(). The x86 path starts a helper process and cannot report
-    // success synchronously, so callers must tolerate Pending and come back later
-    // instead of blocking the UI thread until the helper signals readiness.
+    // Outcome of ensure(). A helper installs the hook asynchronously, so success
+    // cannot be reported synchronously: callers must tolerate Pending and come
+    // back later instead of blocking the UI thread until the helper is up.
     enum class Inject { Ready, Pending, Failed };
 
-    bool load(const std::wstring& exeDir);
-    bool available() const { return install_ != nullptr; }
+    bool load(const std::wstring& exeDir);   // remember the dir, check the helpers
+    bool available() const { return available_; }
     Inject ensure(DWORD threadId, DWORD pid, HWND host);
     void pruneDead();    // release entries whose target thread no longer exists
     void removeAll();
 
 private:
-    typedef HHOOK (__stdcall* InstallFn)(DWORD, HWND);
-    typedef BOOL  (__stdcall* RemoveFn)(HHOOK);
-
     // Thread IDs are recycled by Windows, so a bare threadId is not a stable key:
     // a restarted target can reuse an id we still hold an entry for. We pin each
     // entry to the thread's creation time and drop it when that no longer matches.
-    struct HookEntry   { HHOOK  hook = nullptr; ULONGLONG born = 0; };
-    struct HelperEntry { HANDLE proc = nullptr; HANDLE ready = nullptr;
-                         ULONGLONG born = 0; ULONGLONG startedAt = 0; };
+    struct HelperEntry {
+        HANDLE    proc       = nullptr;
+        HANDLE    ready      = nullptr;   // helper signals it once its hook is live
+        DWORD     mainThread = 0;         // for a graceful WM_QUIT on teardown
+        ULONGLONG born       = 0;         // creation time of the hooked thread
+        ULONGLONG startedAt  = 0;
+    };
 
     static ULONGLONG threadBornTime(DWORD threadId);
+    static void nudge(DWORD threadId);     // make the target unmap the hook DLL
     static void closeHelper(HelperEntry&);
-    static void nudge(DWORD threadId);          // make the target unmap the DLL
-    void dropHook(DWORD threadId, HHOOK hook);  // unhook + nudge
+    std::wstring helperPath(DWORD pid) const;
 
-    HMODULE   dll_ = nullptr;
-    InstallFn install_ = nullptr;
-    RemoveFn  remove_  = nullptr;
     std::wstring exeDir_;
-    std::unordered_map<DWORD, HookEntry>   hooks_;    // threadId -> hook (x64)
-    std::unordered_map<DWORD, HelperEntry> helpers_;  // threadId -> helper process (x86)
+    bool available_ = false;
+    std::unordered_map<DWORD, HelperEntry> helpers_;   // threadId -> helper process
 };
