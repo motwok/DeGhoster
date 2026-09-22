@@ -38,16 +38,37 @@ jobs:
           cmake -S . -B build/cmake/x64 -A x64
           cmake --build build/cmake/x64 --config Debug
 
-      - name: Run tests under OpenCppCoverage
+      # Two runs merged into one report: OpenCppCoverage drives one command each,
+      # and measuring only the integration tests left everything the native unit
+      # tests cover out of the numbers.
+      - name: Run native unit tests under OpenCppCoverage
         shell: pwsh
         run: |
           OpenCppCoverage.exe `
             --sources "$env:GITHUB_WORKSPACE\src" `
             --modules build `
             --cover_children --quiet `
-            --export_type cobertura:coverage\coverage.cobertura.xml `
-            --export_type html:coverage\html `
+            --export_type binary:coverage\unit.cov `
+            -- build\UnitTests.exe
+
+      - name: Run integration tests under OpenCppCoverage
+        shell: pwsh
+        run: |
+          OpenCppCoverage.exe `
+            --sources "$env:GITHUB_WORKSPACE\src" `
+            --modules build `
+            --cover_children --quiet `
+            --export_type binary:coverage\integration.cov `
             -- dotnet test tests\DeGhoster.Tests\DeGhoster.Tests.csproj -c Release --nologo --filter "Category!=InteractiveInput" --disable-build-servers
+
+      - name: Merge coverage
+        shell: pwsh
+        run: |
+          OpenCppCoverage.exe `
+            --input_coverage coverage\unit.cov `
+            --input_coverage coverage\integration.cov `
+            --export_type cobertura:coverage\coverage.cobertura.xml `
+            --export_type html:coverage\html
 
       - name: Upload coverage report
         if: always()

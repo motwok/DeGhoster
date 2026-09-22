@@ -15,6 +15,7 @@ $script:CorePayload = @(
     'DeGhoster.Hook64.dll'
     'DeGhoster.Hook32.dll'
     'DeGhoster.Helper32.exe'
+    'DeGhoster.Helper64.exe'
     'LICENSE.txt'
     'NOTICE.txt'
 )

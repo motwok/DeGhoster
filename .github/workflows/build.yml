@@ -44,7 +44,7 @@ jobs:
           cmake -S . -B build/cmake/x86 -A Win32
           cmake --build build/cmake/x86 --config Release
 
-      - name: Build x64 (Host + MUI + Hook64)
+      - name: Build x64 (Host + MUI + Hook64 + Helper64)
         shell: pwsh
         run: |
           cmake -S . -B build/cmake/x64 -A x64

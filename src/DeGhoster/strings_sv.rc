@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Om du tycker att projektet är användbart, överväg att stödja det:"
     IDS_INFO_THIRDPARTY "Meddelanden från tredje part / licens"
     IDS_COL_WINDOW      "Fönster (Program)"
+    IDS_HOOK_MISSING    "En nödvändig DeGhoster-komponent saknas, så spökfönster kan inte åtgärdas. Installera om DeGhoster."
 END

@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Als je dit project nuttig vindt, overweeg het dan te steunen:"
     IDS_INFO_THIRDPARTY "Kennisgevingen van derden / licentie"
     IDS_COL_WINDOW      "Venster (Uitvoerbaar bestand)"
+    IDS_HOOK_MISSING    "Een vereist DeGhoster-onderdeel ontbreekt, dus spookvensters kunnen niet worden verholpen. Installeer DeGhoster opnieuw."
 END

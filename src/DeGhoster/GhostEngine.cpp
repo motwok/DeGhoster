@@ -21,6 +21,7 @@
 
 #include <dwmapi.h>          // must precede Hook.h: DWMWA_CLOAKED is an SDK enum here
 #include "Hook.h"            // DGH_CLOAK / DGH_UNCLOAK
+#include <algorithm>
 #include <vector>
 
 #pragma comment(lib, "dwmapi.lib")
@@ -30,7 +31,10 @@ namespace {
 constexpr wchar_t kTargetClass[] = L"Chrome_WidgetWin_1";
 
 // LWA_ALPHA flag + alpha 0 distinguishes a ghost from a per-pixel-alpha window.
-bool IsBlocker(HWND h)
+// `ignoreCloak` skips the not-cloaked test so an already-fixed window can still be
+// re-validated: it is cloaked precisely because we cloaked it, and testing that bit
+// would report every window we fixed as "no longer a ghost" the moment we fixed it.
+bool IsBlocker(HWND h, bool ignoreCloak = false)
 {
     if (!IsWindowVisible(h)) return false;
     LONG ex = GetWindowLongW(h, GWL_EXSTYLE);
@@ -50,8 +54,11 @@ bool IsBlocker(HWND h)
     int vr = vx + GetSystemMetrics(SM_CXVIRTUALSCREEN), vb = vy + GetSystemMetrics(SM_CYVIRTUALSCREEN);
     if (!(r.right > vx && r.left < vr && r.bottom > vy && r.top < vb)) return false;
 
-    int cloak = 0;
-    if (DwmGetWindowAttribute(h, DWMWA_CLOAKED, &cloak, sizeof(cloak)) != S_OK || cloak != 0) return false;
+    if (!ignoreCloak) {
+        int cloak = 0;
+        if (DwmGetWindowAttribute(h, DWMWA_CLOAKED, &cloak, sizeof(cloak)) != S_OK || cloak != 0)
+            return false;
+    }
     return true;
 }
 
@@ -63,6 +70,21 @@ constexpr ULONGLONG kPendingTimeoutMs = 3000;
 // blacklisted for the whole session (the failure is often transient).
 constexpr ULONGLONG kBadPidCooldownMs = 15000;
 
+// The hook sets and clears only the *app* cloak bit. A window can be
+// shell-cloaked as well (it lives on another virtual desktop, say), and that bit
+// is not ours to clear, so waiting for the whole attribute to reach 0 would spin
+// until the deadline. IsBlocker() deliberately tests all bits; this tests ours.
+#ifndef DWM_CLOAKED_APP
+#define DWM_CLOAKED_APP 0x00000001
+#endif
+
+bool AppCloaked(HWND h)
+{
+    int c = 0;
+    if (DwmGetWindowAttribute(h, DWMWA_CLOAKED, &c, sizeof(c)) != S_OK) return false;
+    return (c & DWM_CLOAKED_APP) != 0;
+}
+
 } // namespace
 
 GhostEngine* GhostEngine::s_instance = nullptr;
@@ -73,7 +95,7 @@ void GhostEngine::start(HWND host)
 {
     host_ = host;
     s_instance = this;
-    hooks_.load(proc::ExeDir());
+    hooksLoaded_ = hooks_.load(proc::ExeDir());
 
     EnumWindows([](HWND h, LPARAM) -> BOOL { s_instance->handleCandidate(h); return TRUE; }, 0);
 
@@ -83,13 +105,45 @@ void GhostEngine::start(HWND host)
                            0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 }
 
-void GhostEngine::stop()
+void GhostEngine::stop(DWORD uncloakBudgetMs)
 {
     if (we1_) UnhookWinEvent(we1_);
     if (we2_) UnhookWinEvent(we2_);
     we1_ = we2_ = nullptr;
+
+    pending_.clear();                       // nothing may re-post a cloak now
+    uncloakAllAndWait(uncloakBudgetMs);     // must precede removeAll(): the hook
+                                            // has to still be installed to act
     hooks_.removeAll();
     s_instance = nullptr;
+}
+
+void GhostEngine::uncloakAllAndWait(DWORD budgetMs)
+{
+    if (cloaked_.empty()) return;
+
+    std::vector<HWND> waiting;
+    waiting.reserve(cloaked_.size());
+    for (HWND h : cloaked_)
+        if (IsWindow(h) && PostMessageW(h, DGH_UNCLOAK, 0, 0))
+            waiting.push_back(h);
+
+    // Wait on the observable DWM state rather than the hook's WM_DGH_UNCLOAKED
+    // reply: stop() runs inside WM_DESTROY/WM_ENDSESSION, where pumping a nested
+    // message loop would re-enter the window procedure already tearing the window
+    // down, and a dispatched reply could re-inject through reconcile().
+    const ULONGLONG deadline = GetTickCount64() + budgetMs;
+    while (!waiting.empty() && GetTickCount64() < deadline) {
+        waiting.erase(std::remove_if(waiting.begin(), waiting.end(),
+                                     [](HWND h) { return !IsWindow(h) || !AppCloaked(h); }),
+                      waiting.end());
+        if (waiting.empty()) break;
+        Sleep(15);
+    }
+
+    // Anything still waiting never pumped our message (hung, or already exiting);
+    // the DLL_PROCESS_DETACH path in the hook stays the fallback for those.
+    cloaked_.clear();
 }
 
 void CALLBACK GhostEngine::winEventThunk(HWINEVENTHOOK, DWORD ev, HWND hwnd, LONG idObject, LONG idChild, DWORD, DWORD)
@@ -101,9 +155,7 @@ void CALLBACK GhostEngine::winEventThunk(HWINEVENTHOOK, DWORD ev, HWND hwnd, LON
 void GhostEngine::onWinEvent(DWORD event, HWND hwnd)
 {
     if (event == EVENT_OBJECT_DESTROY) {
-        pending_.erase(hwnd);
-        cloaked_.erase(hwnd);
-        if (tracked_.erase(hwnd) && listener_) listener_->onTrackedChanged();
+        untrack(hwnd);
         return;
     }
     handleCandidate(hwnd);
@@ -151,16 +203,65 @@ void GhostEngine::reconcile(HWND h)
 
     if (desired && !isCloaked) {
         DWORD pid = 0, tid = GetWindowThreadProcessId(h, &pid);
-        if (tid && hooks_.ensure(tid, pid, host_)) {
+        // Without the cooldown check a failed host would be re-attempted on every
+        // tick; isBadPid() also expires the entry once the cooldown has lapsed,
+        // which is what makes the periodic retry in tick() eventually take effect.
+        if (!tid || isBadPid(pid)) return;
+        switch (hooks_.ensure(tid, pid, host_)) {
+        case HookInjector::Inject::Ready:
             if (PostMessageW(h, DGH_CLOAK, 0, 0))
                 pending_[h] = GetTickCount64();
-        } else if (tid) {
+            break;
+        case HookInjector::Inject::Pending:
+            break;            // helper still starting; tick() comes back for it
+        case HookInjector::Inject::Failed:
             badPids_[pid] = GetTickCount64();
+            break;
         }
     } else if (!desired && isCloaked) {
         if (PostMessageW(h, DGH_UNCLOAK, 0, 0))
             pending_[h] = GetTickCount64();
     }
+}
+
+void GhostEngine::untrack(HWND h)
+{
+    // If we cloaked it, reveal it again: the window either vanished or stopped
+    // qualifying, and leaving our cloak on a window that became legitimate would
+    // hide it for good.
+    if (cloaked_.count(h) && IsWindow(h)) PostMessageW(h, DGH_UNCLOAK, 0, 0);
+    pending_.erase(h);
+    cloaked_.erase(h);
+    if (tracked_.erase(h) && listener_) listener_->onTrackedChanged();
+}
+
+void GhostEngine::tick()
+{
+    expirePending();
+    hooks_.pruneDead();
+
+    // Qualification is otherwise only ever tested when a window is first seen, so
+    // a window that stops being a ghost (alpha back to 255, layering dropped) would
+    // stay tracked and cloaked forever. No win-event covers those changes, which is
+    // why this is a sweep rather than an event handler.
+    std::vector<HWND> stale, idle;
+    for (auto& kv : tracked_) {
+        HWND h = kv.first;
+        if (!IsWindow(h) || !IsBlocker(h, /*ignoreCloak*/ true)) { stale.push_back(h); continue; }
+        if (!cloaked_.count(h) && !pending_.count(h)) idle.push_back(h);
+    }
+    for (HWND h : stale) untrack(h);
+    for (HWND h : idle)  reconcile(h);   // picks up ready helpers and lapsed cooldowns
+
+    // Detection is otherwise purely event-driven, but the properties that make a
+    // window a ghost (alpha, layering) can change without raising any win-event, so
+    // a window released above would never be picked up again. Re-scanning is only
+    // affordable here because ensure() no longer blocks: handleCandidate() can now
+    // start a helper from inside this callback without freezing the UI thread.
+    EnumWindows([](HWND h, LPARAM lp) -> BOOL {
+        reinterpret_cast<GhostEngine*>(lp)->handleCandidate(h);
+        return TRUE;
+    }, (LPARAM)this);
 }
 
 void GhostEngine::expirePending()

@@ -31,11 +31,38 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int)
     if (autostart::handleCommandLine(&autostartExit))
         return autostartExit;
 
+    // --quit: close a running instance and wait until it and its injector helpers
+    // are gone, so the files they hold open can be replaced. Deliberately handled
+    // BEFORE the single-instance guard below: the point is to end that instance,
+    // not to hand off to it. The installer calls this before it checks which files
+    // are in use.
+    {
+        int argc = 0;
+        LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+        bool quit = false;
+        if (argv) {
+            for (int i = 1; i < argc; ++i)
+                if (lstrcmpiW(argv[i], L"--quit") == 0 || lstrcmpiW(argv[i], L"/quit") == 0) {
+                    quit = true;
+                    break;
+                }
+            LocalFree(argv);
+        }
+        if (quit) return MainWindow::requestShutdown(30000) ? 0 : 1;
+    }
+
     // Single instance: a second launch (e.g. autostart + a manual start) would give
     // two tray icons and two engines fighting over the same windows. Hand off to the
     // running instance and exit. The mutex is released automatically on exit.
     HANDLE instanceMutex = CreateMutexW(nullptr, TRUE, L"Local\\DeGhoster.SingleInstance");
-    if (instanceMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
+    const DWORD mutexErr = GetLastError();
+    // ERROR_ACCESS_DENIED means the mutex exists but belongs to an instance we are
+    // not allowed to open, typically one running elevated. That is still "already
+    // running": treating the null handle as "first instance" started a second tray
+    // icon and a second engine fighting over the same windows.
+    const bool alreadyRunning = instanceMutex ? (mutexErr == ERROR_ALREADY_EXISTS)
+                                              : (mutexErr == ERROR_ACCESS_DENIED);
+    if (alreadyRunning) {
         MainWindow::activateExisting();
         return 0;
     }

@@ -28,6 +28,7 @@
 
 #include <commctrl.h>
 #include <uxtheme.h>
+#include <windowsx.h>   // GET_X_LPARAM
 #include <algorithm>
 #include <string>
 
@@ -39,6 +40,9 @@ namespace {
 constexpr wchar_t kClass[] = L"DeGhosterMainWindow";
 
 constexpr UINT WM_TRAY = WM_APP + 0x40;
+// Posted by the list subclass below when the eye cell was clicked.
+constexpr UINT WM_EYE_TOGGLE = WM_APP + 0x41;
+constexpr UINT_PTR kListSubclassId = 1;
 constexpr UINT_PTR kPendingTimer = 1;
 enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT };
 enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_WIN_BASE = 3000 };
@@ -46,6 +50,44 @@ enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_WIN_BASE = 3000 };
 // Cross-process "show yourself" ping from a second launch. RegisterWindowMessage
 // returns the same value in every process for this string.
 UINT showExistingMsg() { static UINT m = RegisterWindowMessageW(L"DeGhoster_ShowExistingInstance"); return m; }
+
+// The list view swallows the click that activates an inactive window: it emits no
+// NM_CLICK for it, so the eye needed a second click whenever the window was not
+// already in front. A subclass sees the raw button messages whatever the control
+// decides to do with them, so one click is enough again.
+//
+// The refdata carries the cell the press started on (item + 1, or 0 for "not the
+// eye"), so a press that drifts off the cell before release does not toggle.
+LRESULT CALLBACK ListProc(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR ref)
+{
+    if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP) {
+        LVHITTESTINFO ht{};
+        ht.pt.x = GET_X_LPARAM(lp);
+        ht.pt.y = GET_Y_LPARAM(lp);
+        ListView_SubItemHitTest(h, &ht);
+        const DWORD_PTR cell = (ht.iItem >= 0 && ht.iSubItem == 1) ? (DWORD_PTR)(ht.iItem + 1) : 0;
+
+        if (msg == WM_LBUTTONDOWN) {
+            SetWindowSubclass(h, ListProc, kListSubclassId, cell);
+        } else {
+            if (cell && cell == ref) {
+                LVITEMW it{}; it.mask = LVIF_PARAM; it.iItem = ht.iItem;
+                if (ListView_GetItem(h, &it))
+                    PostMessageW(GetParent(h), WM_EYE_TOGGLE, (WPARAM)it.lParam, 0);
+            }
+            SetWindowSubclass(h, ListProc, kListSubclassId, 0);
+        }
+    }
+    return DefSubclassProc(h, msg, wp, lp);
+}
+
+// FixInfo::title is stored raw because it is part of the registry opt-out key, so
+// the placeholder for an untitled window is substituted here, at display time.
+std::wstring RowLabel(const FixInfo& fi)
+{
+    const wchar_t* t = fi.title.empty() ? loc::t(IDS_UNTITLED) : fi.title.c_str();
+    return std::wstring(t) + L" (" + fi.exeName + L")";
+}
 }
 
 bool MainWindow::activateExisting()
@@ -54,6 +96,31 @@ bool MainWindow::activateExisting()
     if (!h) return false;
     PostMessageW(h, showExistingMsg(), 0, 0);
     return true;
+}
+
+bool MainWindow::requestShutdown(DWORD timeoutMs)
+{
+    const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+
+    if (HWND h = FindWindowW(kClass, nullptr)) {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(h, &pid);
+        HANDLE p = pid ? OpenProcess(SYNCHRONIZE, FALSE, pid) : nullptr;
+        // The tray Exit path: uncloak the windows, wind the helpers down, quit.
+        PostMessageW(h, WM_COMMAND, IDC_EXIT, 0);
+        if (p) {
+            const ULONGLONG now = GetTickCount64();
+            WaitForSingleObject(p, now < deadline ? (DWORD)(deadline - now) : 0);
+            CloseHandle(p);
+        }
+    }
+
+    // The helpers go away on their own once the host is gone, but until they do
+    // they still hold a hook DLL open - which is the whole reason for waiting.
+    while (GetTickCount64() < deadline && proc::HelperRunning())
+        Sleep(100);
+
+    return !FindWindowW(kClass, nullptr) && !proc::HelperRunning();
 }
 
 MainWindow::MainWindow() : engine_(settings_) {}
@@ -117,6 +184,9 @@ bool MainWindow::create(HINSTANCE inst, bool startHidden)
     // window can't stay stuck in "pending" forever.
     SetTimer(h, kPendingTimer, 1000, nullptr);
     updateStatus();
+    // A hook DLL that will not load makes the x64 path a silent no-op: ghosts are
+    // listed but never fixed, with nothing to tell the user why. Say so once.
+    if (!engine_.hooksAvailable()) warnHooksMissing();
     return true;
 }
 
@@ -144,9 +214,14 @@ void MainWindow::onCreate()
     ui::EnableHover(exit_);
 
     list_ = CreateWindowExW(0, WC_LISTVIEWW, L"",
-                            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_NOSORTHEADER,
+                            // LVS_SHAREIMAGELISTS: rowSizer_ belongs to us and is freed in
+                            // applyFont()/~MainWindow. Without it the control destroys the
+                            // image list on teardown and those calls hit a freed handle.
+                            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL |
+                            LVS_NOSORTHEADER | LVS_SHAREIMAGELISTS,
                             0, 0, 0, 0, hwnd_, (HMENU)IDC_LIST, inst_, nullptr);
     ListView_SetExtendedListViewStyle(list_, LVS_EX_DOUBLEBUFFER);
+    SetWindowSubclass(list_, ListProc, kListSubclassId, 0);
     LVCOLUMNW col{}; col.mask = LVCF_TEXT | LVCF_WIDTH;
     col.pszText = (LPWSTR)loc::t(IDS_COL_WINDOW); col.cx = S(300); ListView_InsertColumn(list_, 0, &col);
     col.mask |= LVCF_FMT; col.fmt = LVCFMT_CENTER; col.pszText = (LPWSTR)L""; col.cx = S(54);
@@ -226,7 +301,7 @@ void MainWindow::rebuildList()
     std::vector<std::pair<std::wstring, HWND>> rows;
     rows.reserve(engine_.tracked().size());
     for (auto& kv : engine_.tracked())
-        rows.push_back({ kv.second.title + L" (" + kv.second.exeName + L")", kv.first });
+        rows.push_back({ RowLabel(kv.second), kv.first });
     std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
         int c = CompareStringOrdinal(a.first.c_str(), -1, b.first.c_str(), -1, TRUE);
         return c ? c == CSTR_LESS_THAN : a.second < b.second;
@@ -254,7 +329,10 @@ void MainWindow::updateStatus()
     wsprintfW(t, L"%s \u2014 %d %s", app::Name, n,
               loc::t(n == 1 ? IDS_GHOST_SINGULAR : IDS_GHOST_PLURAL));
     SetWindowTextW(hwnd_, t);
-    lstrcpynW(nid_.szTip, t, ARRAYSIZE(nid_.szTip));
+    // With no hook DLL the count is beside the point, so the tooltip carries the
+    // reason nothing is being fixed instead. Every translation fits szTip.
+    lstrcpynW(nid_.szTip, engine_.hooksAvailable() ? t : loc::t(IDS_HOOK_MISSING),
+              ARRAYSIZE(nid_.szTip));
     nid_.uFlags = NIF_TIP;
     Shell_NotifyIconW(NIM_MODIFY, &nid_);
 }
@@ -309,14 +387,23 @@ LRESULT MainWindow::listCustomDraw(NMLVCUSTOMDRAW* cd)
             auto it = engine_.tracked().find(ghost);
             bool managed = it == engine_.tracked().end() || settings_.isManaged(it->second.disableKey());
             DWORD oldLayout = GetLayout(cd->nmcd.hdc);
-            SetLayout(cd->nmcd.hdc, 0);   // keep the eye glyph upright under RTL
-            int w = rc.right - rc.left, hh = rc.bottom - rc.top;
+            // SetLayout(0) keeps the glyph upright, but it also switches the DC to
+            // physical coordinates while rc came back in the mirrored logical ones.
+            // Unmirrored, the eye lands on top of the title column under RTL.
+            RECT dr = rc;
+            if (oldLayout & LAYOUT_RTL) {
+                RECT lc; GetClientRect(list_, &lc);
+                dr.left  = lc.right - rc.right;
+                dr.right = lc.right - rc.left;
+            }
+            SetLayout(cd->nmcd.hdc, 0);
+            int w = dr.right - dr.left, hh = dr.bottom - dr.top;
             int side = std::min(w, hh);
             int dia = side - S(6);
-            RECT c{ rc.left + (w - dia) / 2, rc.top + (hh - dia) / 2,
-                    rc.left + (w - dia) / 2 + dia, rc.top + (hh - dia) / 2 + dia };
+            RECT c{ dr.left + (w - dia) / 2, dr.top + (hh - dia) / 2,
+                    dr.left + (w - dia) / 2 + dia, dr.top + (hh - dia) / 2 + dia };
             gfx::FillCircle(cd->nmcd.hdc, c, 255, managed ? theme_.accentOn : theme_.accentOff);
-            gfx::DrawGlyph(cd->nmcd.hdc, rc, managed ? glyph::Eye : glyph::EyeOff,
+            gfx::DrawGlyph(cd->nmcd.hdc, dr, managed ? glyph::Eye : glyph::EyeOff,
                            managed ? RGB(255, 255, 255) : RGB(0, 0, 0), (int)(side * 0.55));
             SetLayout(cd->nmcd.hdc, oldLayout);
             return CDRF_SKIPDEFAULT;
@@ -328,16 +415,6 @@ LRESULT MainWindow::listCustomDraw(NMLVCUSTOMDRAW* cd)
     }
     }
     return CDRF_DODEFAULT;
-}
-
-void MainWindow::onListClick(const NMITEMACTIVATE* ia)
-{
-    LVHITTESTINFO ht{}; ht.pt = ia->ptAction;
-    ListView_SubItemHitTest(list_, &ht);
-    if (ht.iSubItem != 1 || ht.iItem < 0) return;
-    LVITEMW it{}; it.mask = LVIF_PARAM; it.iItem = ht.iItem;
-    ListView_GetItem(list_, &it);
-    toggleWindow((HWND)it.lParam);
 }
 
 void MainWindow::setGlobalEnabled(bool on)
@@ -379,6 +456,17 @@ void MainWindow::addTray()
     Shell_NotifyIconW(NIM_ADD, &nid_);
 }
 
+void MainWindow::warnHooksMissing()
+{
+    // The brand name is not localized, so the balloon title needs no string of its own.
+    nid_.uFlags = NIF_INFO;
+    nid_.dwInfoFlags = NIIF_WARNING;
+    lstrcpynW(nid_.szInfoTitle, app::Name, ARRAYSIZE(nid_.szInfoTitle));
+    lstrcpynW(nid_.szInfo, loc::t(IDS_HOOK_MISSING), ARRAYSIZE(nid_.szInfo));
+    Shell_NotifyIconW(NIM_MODIFY, &nid_);
+    nid_.dwInfoFlags = 0;
+}
+
 void MainWindow::showTrayMenu()
 {
     POINT pt; GetCursorPos(&pt);
@@ -397,7 +485,7 @@ void MainWindow::showTrayMenu()
         for (auto& kv : engine_.tracked()) {
             UINT id = IDM_WIN_BASE + (UINT)menuWindows_.size();
             menuWindows_.push_back(kv.first);
-            std::wstring label = kv.second.title + L" (" + kv.second.exeName + L")";
+            std::wstring label = RowLabel(kv.second);
             bool managed = settings_.isManaged(kv.second.disableKey());
             AppendMenuW(m, MF_STRING | (managed ? MF_CHECKED : 0), id, label.c_str());
         }
@@ -444,14 +532,14 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
 
+    case WM_EYE_TOGGLE: toggleWindow((HWND)wp); return 0;
+
     case WM_DRAWITEM: drawButton((DRAWITEMSTRUCT*)lp); return TRUE;
 
     case WM_NOTIFY: {
         auto* n = (NMHDR*)lp;
-        if (n->idFrom == IDC_LIST) {
-            if (n->code == NM_CUSTOMDRAW) return listCustomDraw((NMLVCUSTOMDRAW*)lp);
-            if (n->code == NM_CLICK) onListClick((NMITEMACTIVATE*)lp);
-        }
+        if (n->idFrom == IDC_LIST && n->code == NM_CUSTOMDRAW)
+            return listCustomDraw((NMLVCUSTOMDRAW*)lp);
         return 0;
     }
 
@@ -475,7 +563,7 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
     case WM_DGH_UNCLOAKED: engine_.onUncloaked((HWND)wp); updateStatus(); return 0;
 
     case WM_TIMER:
-        if (wp == kPendingTimer) engine_.expirePending();
+        if (wp == kPendingTimer) engine_.tick();
         return 0;
 
     case WM_SETTINGCHANGE:
@@ -491,11 +579,15 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         return TRUE;
 
     case WM_ENDSESSION:
-        // Logoff/shutdown/Restart-Manager: unhook and uncloak before we're killed,
-        // so we don't leave the hook DLL locked in targets or windows cloaked.
+        // Logoff/shutdown/Restart-Manager. Uncloak on a short budget (the session
+        // is ending on a clock), then actually exit: stopping the engine without
+        // exiting left the process alive with a live timer that could re-inject,
+        // and the Restart Manager expects the app to close itself. stop() is
+        // idempotent, so WM_DESTROY repeating the teardown is harmless.
         if (wp) {
-            engine_.stop();
-            Shell_NotifyIconW(NIM_DELETE, &nid_);
+            engine_.stop(700);
+            reallyExit_ = true;
+            DestroyWindow(hwnd_);
         }
         return 0;
 

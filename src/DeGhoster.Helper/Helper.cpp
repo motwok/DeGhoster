@@ -23,6 +23,20 @@
 typedef HHOOK (__stdcall *InstallFn)(DWORD, HWND);
 typedef BOOL  (__stdcall *RemoveFn)(HHOOK);
 
+// The helper is built for both bitnesses and always loads the matching hook DLL;
+// a hook DLL must match the bitness of the thread it is installed on.
+#if defined(_WIN64)
+static const wchar_t kHookDll[] = L"DeGhoster.Hook64.dll";
+#else
+static const wchar_t kHookDll[] = L"DeGhoster.Hook32.dll";
+#endif
+
+// Removing the hook does not unmap the DLL from the target: Windows only lets go
+// once that thread next pulls a message. Without this an idle target keeps the
+// hook DLL mapped, and its file locked, long after we are gone - which is enough
+// to make an installer treat the target as holding the file.
+static void NudgeTarget(DWORD tid) { PostThreadMessageW(tid, WM_NULL, 0, 0); }
+
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 {
     int argc = 0;
@@ -38,7 +52,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
     std::wstring dllPath(path, pn);
     size_t slash = dllPath.find_last_of(L'\\');
     dllPath = (slash == std::wstring::npos) ? std::wstring() : dllPath.substr(0, slash + 1);
-    dllPath += L"DeGhoster.Hook32.dll";
+    dllPath += kHookDll;
     HMODULE dll = LoadLibraryW(dllPath.c_str());
     if (!dll) return 2;
 
@@ -65,14 +79,22 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
         // window, so no WM_QUIT ever arrives). Falling back to GetMessageW would
         // orphan this process forever with the hook still installed. Bail out.
         remove(hook);
+        NudgeTarget(tid);
         FreeLibrary(dll);
         return 5;
     }
 
+    // Watch the hooked thread as well. With only the host handle to wait on, the
+    // helper outlives its target: closing the app leaves one orphaned helper (with
+    // a dead hook) per hooked thread running until DeGhoster itself quits.
+    HANDLE tgtThread = OpenThread(SYNCHRONIZE, FALSE, tid);
+    HANDLE waits[2] = { hostProc, tgtThread };
+    const DWORD nWait = tgtThread ? 2 : 1;
+
     for (;;)
     {
-        DWORD w = MsgWaitForMultipleObjects(1, &hostProc, FALSE, INFINITE, QS_ALLINPUT);
-        if (w == WAIT_OBJECT_0) break;
+        DWORD w = MsgWaitForMultipleObjects(nWait, waits, FALSE, INFINITE, QS_ALLINPUT);
+        if (w >= WAIT_OBJECT_0 && w < WAIT_OBJECT_0 + nWait) break;   // host or target gone
         MSG msg;
         bool quit = false;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
@@ -82,9 +104,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
         }
         if (quit) break;
     }
+    if (tgtThread) CloseHandle(tgtThread);
     CloseHandle(hostProc);
 
     remove(hook);
+    NudgeTarget(tid);
     FreeLibrary(dll);
     return 0;
 }

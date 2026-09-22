@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Si ce projet vous est utile, pensez à le soutenir :"
     IDS_INFO_THIRDPARTY "Mentions des tiers / licence"
     IDS_COL_WINDOW      "Fenêtre (Exécutable)"
+    IDS_HOOK_MISSING    "Un composant DeGhoster requis est manquant : les fenêtres fantômes ne peuvent pas être corrigées. Réinstallez DeGhoster."
 END

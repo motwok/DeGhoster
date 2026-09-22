@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Wenn dir dieses Projekt gefällt, unterstütze es gern:"
     IDS_INFO_THIRDPARTY "Drittanbieter-Hinweise / Lizenz"
     IDS_COL_WINDOW      "Fenster (Programm)"
+    IDS_HOOK_MISSING    "Eine erforderliche DeGhoster-Komponente fehlt, daher können Geisterfenster nicht behoben werden. Bitte neu installieren."
 END

@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Jos tämä projekti on hyödyllinen, harkitse sen tukemista:"
     IDS_INFO_THIRDPARTY "Kolmansien osapuolten ilmoitukset / lisenssi"
     IDS_COL_WINDOW      "Ikkuna (Ohjelma)"
+    IDS_HOOK_MISSING    "Vaadittu DeGhoster-osa puuttuu, joten haamuikkunoita ei voi korjata. Asenna DeGhoster uudelleen."
 END

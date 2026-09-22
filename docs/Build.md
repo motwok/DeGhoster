@@ -38,7 +38,7 @@ src/Version.h.in          template for the version resource (generates Version.h
 src/version.rc            shared VERSIONINFO for every binary
 src/DeGhoster/            Win32 host (C++)
 src/DeGhoster.Hook/       hook DLL (x64 + x86)
-src/DeGhoster.Helper32/   32-bit injector
+src/DeGhoster.Helper/     injector helper (x64 + x86)
 src/DeGhoster.Lang/       per-language resource sources (muirct inputs)
 packaging/                WiX MSI source + ZIP/MSI scripts
 build/                    all build artifacts (gitignored)
@@ -86,7 +86,8 @@ Both workflows write centrally to `build\`. The self-contained runtime set:
 build\DeGhoster.exe                  host (x64, language-neutral)
 build\DeGhoster.Hook64.dll           64-bit hook
 build\DeGhoster.Hook32.dll           32-bit hook
-build\DeGhoster.Helper32.exe         32-bit injector
+build\DeGhoster.Helper32.exe         32-bit injector helper
+build\DeGhoster.Helper64.exe         64-bit injector helper
 build\LICENSE.txt  build\NOTICE.txt  license / third-party notices
 build\<culture>\DeGhoster.exe.mui    one language file per UI language (en-US = fallback)
 ```
@@ -144,7 +145,7 @@ Integration tests live in `tests/` and prove the actual neutralization end to en
   `GhostSim32.exe`) creates a real ghost window matching every `IsBlocker` criterion.
 - **`tests/DeGhoster.Tests`** (xUnit, .NET) launches GhostSim + DeGhoster and asserts
   the window becomes `DWMWA_CLOAKED`. The `[Theory]` runs both bitnesses, so it covers
-  the x64 (Hook64 direct) and x86 (Helper32 → Hook32) injection paths.
+  the x64 (Helper64 → Hook64) and x86 (Helper32 → Hook32) injection paths.
 
 Build first, then run the tests:
 
@@ -170,20 +171,37 @@ choco install opencppcoverage   # one-time
 .\tests\coverage.ps1            # builds Debug (x86+x64) + runs tests under coverage
 ```
 
+The script makes two measured runs - `build\UnitTests.exe` and the integration
+suite - and merges them, because OpenCppCoverage drives exactly one command per
+invocation. Measuring only the integration tests used to leave everything the
+native unit tests cover out of the numbers.
+
 The report lands in `coverage\` (Cobertura XML + browsable HTML at
 `coverage\html\index.html`). Coverage counts the C++ code in `src\` executed
-across DeGhoster, the hooks and Helper32. The automated run reaches ~90 % of
-`src\`; what it can't reach robustly is the modal tray menu, the per-window eye
-click, DPI-change handling, the 32-bit helper's teardown (an orphaned-process
-tooling limit) and defensive API-failure branches.
+across DeGhoster, the hooks and the helpers. The automated run reaches ~97 % of
+`src\`.
+
+What is deliberately left uncovered needs either a fault injector or a human:
+defensive branches that only run when a Win32 call fails (`OpenProcess`,
+`CreateProcess`, the registry writes in `Autostart`), owner-draw states that
+depend on hover and press, timing windows (a helper that never signals, a cloak
+request a hung target never answers), and the About window's links, which would
+open a browser. Chasing those would cost more in test fragility than the lines
+are worth.
+
+> **Note:** a test that runs the app from a *copy* under `build\` would be
+> measured as a second module, and every source line of it counted twice. The
+> "missing helpers" test therefore moves the helper executables aside and puts
+> them back, rather than copying the app somewhere else.
 
 ### Guided (manual) coverage — optional
 
-To cover those remaining lines, `tests\coverage-manual.ps1` runs DeGhoster under
-OpenCppCoverage and walks **you** through the manual actions on screen (open the
-tray menu, toggle a per-window eye, change display scaling, end DeGhoster via Task
-Manager for the helper teardown). It then **merges** its result with the automated
-`coverage\auto.cov` into `coverage\merged-html`:
+`tests\coverage-manual.ps1` runs DeGhoster under OpenCppCoverage and walks **you**
+through manual actions on screen (open the tray menu, toggle a per-window eye,
+change display scaling, end DeGhoster via Task Manager for the helper teardown).
+Most of that is now covered automatically; the guided run is still the way to
+reach the owner-draw hover and press states. It **merges** its result with the
+automated `coverage\auto.cov` into `coverage\merged-html`:
 
 ```powershell
 .\tests\coverage.ps1          # automated run (writes coverage\auto.cov)

@@ -29,6 +29,7 @@ private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     LRESULT handle(UINT, WPARAM, LPARAM);
     void layout();
+    void applyDpiAssets();   // (re)create the dpi-dependent font and icon
     void paint(HDC);
 
     HWND hwnd_ = nullptr, link_ = nullptr, licenseLink_ = nullptr, ok_ = nullptr;

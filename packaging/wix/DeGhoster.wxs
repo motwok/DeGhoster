@@ -40,6 +40,48 @@
                         Manufacturer="Emmo Emminghaus" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of DeGhoster is already installed." />
+
+    <!-- An update replaces DeGhoster.Hook64.dll, and that DLL is loaded INTO the
+         target processes (msedgewebview2 and friends). Left alone, the Restart
+         Manager takes inventory at InstallValidate, sees those targets holding the
+         file and offers to shut them down - which would take the user's WhatsApp or
+         Teams with it. Two guards:
+           1. Close DeGhoster in WixCloseApplications, which runs BEFORE
+              InstallValidate. Once the host is gone it unhooks and the targets
+              release the DLL, so RM finds nothing left to close. Doing it the other
+              way round is too late: RM has built its list by then.
+              EndSessionMessage is essential - a plain WM_CLOSE only hides the
+              window in the tray and would leave the process (and the hook) alive.
+           2. Disable RM outright so it can never shut down a process we did not
+              nominate. The worst case becomes a reboot prompt, not a killed app. -->
+    <!-- ...but WiX schedules WixCloseApplications just before InstallFiles
+         (sequence 3999), which is long after InstallValidate (1400), where the
+         in-use check actually happens. On an interactive upgrade the user would
+         therefore still be shown a "the following applications are using files"
+         dialog listing DeGhoster and every injected target. So close the running
+         instance ourselves, early: the quit switch (see ExeCommand below, where
+         a double dash is allowed and an XML comment may not contain one) ends the
+         host and then waits for its injector helpers to exit, and it is the
+         helpers going away that releases the hook DLLs in the targets.
+         Return="ignore" because a fresh install has no exe to run yet, and the
+         condition keeps it to upgrades and repairs. -->
+    <CustomAction Id="QuitRunningDeGhoster"
+                  FileRef="fil_DeGhosterExe"
+                  ExeCommand="--quit"
+                  Execute="immediate"
+                  Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="QuitRunningDeGhoster" After="CostFinalize"
+              Condition="Installed OR WIX_UPGRADE_DETECTED" />
+    </InstallExecuteSequence>
+
+    <util:CloseApplication Id="CloseDeGhoster"
+                           Target="DeGhoster.exe"
+                           Description="DeGhoster is running and will be closed so the update can continue."
+                           CloseMessage="no"
+                           EndSessionMessage="yes"
+                           RebootPrompt="no" />
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
     <MediaTemplate EmbedCab="yes" />
 
     <!-- Add/Remove Programs metadata. -->
@@ -113,6 +155,9 @@
       </Component>
       <Component Id="cmp_helper32">
         <File Source="$(var.StageDir)\DeGhoster.Helper32.exe" />
+      </Component>
+      <Component Id="cmp_helper64">
+        <File Source="$(var.StageDir)\DeGhoster.Helper64.exe" />
       </Component>
       <Component Id="cmp_license">
         <File Source="$(var.StageDir)\LICENSE.txt" />

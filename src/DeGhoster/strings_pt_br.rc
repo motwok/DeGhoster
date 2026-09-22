@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Se este projeto for útil para você, considere apoiá-lo:"
     IDS_INFO_THIRDPARTY "Avisos de terceiros / licença"
     IDS_COL_WINDOW      "Janela (Executável)"
+    IDS_HOOK_MISSING    "Falta um componente necessário do DeGhoster, portanto as janelas fantasma não podem ser corrigidas. Reinstale o DeGhoster."
 END

@@ -157,12 +157,22 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // are being destroyed anyway, and calling cross-process DWM under the
             // loader lock then risks a deadlock. Only uncloak on a real FreeLibrary
             // (dynamic unload after the hook is removed), where lpReserved == NULL.
-            if (lpReserved == NULL && g_lockInit && g_cloaked)
+            if (lpReserved == NULL && g_lockInit)
             {
-                EnterCriticalSection(&g_lock);
-                for (HWND h : *g_cloaked) if (IsWindow(h)) SetCloak(h, FALSE);
-                g_cloaked->clear();
-                LeaveCriticalSection(&g_lock);
+                if (g_cloaked)
+                {
+                    EnterCriticalSection(&g_lock);
+                    for (HWND h : *g_cloaked) if (IsWindow(h)) SetCloak(h, FALSE);
+                    g_cloaked->clear();
+                    LeaveCriticalSection(&g_lock);
+                    delete g_cloaked;
+                    g_cloaked = nullptr;
+                }
+                // Release the per-process state as well: each unload/reload cycle
+                // would otherwise leak one vector and one critical section, and
+                // EnsureInit() re-creates both on the next attach.
+                DeleteCriticalSection(&g_lock);
+                g_lockInit = false;
             }
             break;
     }

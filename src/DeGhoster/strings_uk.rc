@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Якщо проєкт корисний, підтримайте його:"
     IDS_INFO_THIRDPARTY "Повідомлення третіх сторін / ліцензія"
     IDS_COL_WINDOW      "Вікно (Програма)"
+    IDS_HOOK_MISSING    "Бракує потрібного компонента DeGhoster, тому вікна-привиди не буде усунено. Перевстановіть DeGhoster."
 END

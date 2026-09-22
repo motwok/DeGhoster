@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Pokud je pro vás tento projekt užitečný, zvažte jeho podporu:"
     IDS_INFO_THIRDPARTY "Oznámení třetích stran / licence"
     IDS_COL_WINDOW      "Okno (Program)"
+    IDS_HOOK_MISSING    "Chybí požadovaná součást DeGhoster, takže okna duchů nelze opravit. Přeinstalujte prosím DeGhoster."
 END

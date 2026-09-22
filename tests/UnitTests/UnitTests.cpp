@@ -4,21 +4,26 @@
 #include <windows.h>
 #include <dwmapi.h>
 #include <string>
+#include <vector>
 #include <cstdio>
 
 #include "Settings.h"
 #include "Theme.h"
 #include "Hook.h"
+#include "ProcessUtil.h"
+#include "HookInjector.h"
 
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "dwmapi.lib")
 
 static int g_failures = 0;
 
-static void Check(bool cond, const char* what)
+// Returns the condition so a failed precondition can skip what follows.
+static bool Check(bool cond, const char* what)
 {
     std::printf(cond ? "  [ok]   %s\n" : "  [FAIL] %s\n", what);
     if (!cond) ++g_failures;
+    return cond;
 }
 
 static void SettingsTests()
@@ -150,6 +155,163 @@ static void HookDllTests()
     if (h) DestroyWindow(h);
 }
 
+static void ProcessUtilTests()
+{
+    std::printf("ProcessUtil tests\n");
+
+    const std::wstring dir = proc::ExeDir();
+    Check(!dir.empty() && dir.back() == L'\\', "ExeDir ends in a backslash");
+    Check(GetFileAttributesW((dir + L"DeGhoster.Hook64.dll").c_str()) != INVALID_FILE_ATTRIBUTES,
+          "ExeDir points at the build output");
+
+    // WindowTitle must stay RAW: the localized placeholder would end up in the
+    // registry opt-out key and be invalidated by a UI-language change.
+    const wchar_t* cls = L"DeGhosterTitleProbe";
+    WNDCLASSEXW wc{ sizeof(wc) };
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = cls;
+    RegisterClassExW(&wc);
+    HWND named = CreateWindowExW(0, cls, L"ProbeTitle", WS_POPUP, 0, 0, 10, 10,
+                                 nullptr, nullptr, wc.hInstance, nullptr);
+    HWND blank = CreateWindowExW(0, cls, L"", WS_POPUP, 0, 0, 10, 10,
+                                 nullptr, nullptr, wc.hInstance, nullptr);
+    Check(proc::WindowTitle(named) == L"ProbeTitle", "WindowTitle returns the title");
+    Check(proc::WindowTitle(blank).empty(), "WindowTitle leaves an untitled window empty");
+
+    std::wstring exeName, exePath;
+    proc::ResolveHostExe(GetCurrentProcessId(), exeName, exePath);
+    Check(_wcsicmp(exeName.c_str(), L"UnitTests.exe") == 0, "ResolveHostExe finds our own image");
+    Check(!exePath.empty(), "ResolveHostExe returns a full path");
+    proc::ResolveHostExe(0xFFFFFFFCu, exeName, exePath);
+    Check(exeName == L"?", "ResolveHostExe marks an unknown pid");
+
+    Check(!proc::IsWow64(GetCurrentProcessId()), "the x64 test process is not WOW64");
+    Check(!proc::IsWow64(0xFFFFFFFCu), "IsWow64 is false for an unknown pid");
+
+    if (named) DestroyWindow(named);
+    if (blank) DestroyWindow(blank);
+}
+
+// A thread with a message queue that exits when its event is signalled, so a
+// hook can be installed on it and the thread can then be made to go away.
+static DWORD WINAPI ProbeThread(LPVOID param)
+{
+    HANDLE stop = (HANDLE)param;
+    MSG m;
+    PeekMessageW(&m, nullptr, 0, 0, PM_NOREMOVE);   // force the queue into existence
+    for (;;) {
+        DWORD w = MsgWaitForMultipleObjects(1, &stop, FALSE, INFINITE, QS_ALLINPUT);
+        if (w == WAIT_OBJECT_0) break;
+        while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) { }
+    }
+    return 0;
+}
+
+static void HookInjectorTests()
+{
+    std::printf("HookInjector tests\n");
+
+    {
+        HookInjector bad;
+        Check(!bad.load(proc::ExeDir() + L"does-not-exist\\"), "load fails without the helpers");
+        Check(!bad.available(), "available is false after a failed load");
+    }
+
+    HookInjector inj;
+    Check(inj.load(proc::ExeDir()), "load finds both helpers");
+    Check(inj.available(), "available is true once both helpers are there");
+
+    // A helper started for a thread that does not exist installs nothing and
+    // exits. The first call only starts it, so it reports Pending; once it has
+    // died the next call must report Failed so the caller's cooldown kicks in.
+    const DWORD deadThread = 0xFFFFFFFCu;
+    Check(inj.ensure(deadThread, GetCurrentProcessId(), nullptr) == HookInjector::Inject::Pending,
+          "ensure reports Pending while the helper starts");
+    HookInjector::Inject late = HookInjector::Inject::Pending;
+    for (int i = 0; i < 100 && late == HookInjector::Inject::Pending; ++i) {
+        Sleep(50);
+        late = inj.ensure(deadThread, GetCurrentProcessId(), nullptr);
+    }
+    Check(late == HookInjector::Inject::Failed, "ensure reports Failed once the helper is gone");
+
+    // The real path, on this very thread: the helper comes up, signals readiness
+    // and the entry flips to Ready.
+    const DWORD self = GetCurrentThreadId();
+    Check(inj.ensure(self, GetCurrentProcessId(), nullptr) == HookInjector::Inject::Pending,
+          "ensure starts a helper for a live thread");
+    HookInjector::Inject state = HookInjector::Inject::Pending;
+    for (int i = 0; i < 200 && state != HookInjector::Inject::Ready; ++i) {
+        Sleep(25);
+        state = inj.ensure(self, GetCurrentProcessId(), nullptr);
+    }
+    Check(state == HookInjector::Inject::Ready, "ensure flips to Ready once the helper signals");
+    Check(proc::HelperRunning(), "HelperRunning sees the helper we started");
+
+    // The hooked thread is still alive, so the entry must survive a prune.
+    inj.pruneDead();
+    Check(inj.ensure(self, GetCurrentProcessId(), nullptr) == HookInjector::Inject::Ready,
+          "pruneDead keeps the entry for a live thread");
+
+    inj.removeAll();
+    bool gone = false;
+    for (int i = 0; i < 100 && !gone; ++i) { Sleep(50); gone = !proc::HelperRunning(); }
+    Check(gone, "removeAll winds the helper down");
+
+    // pruneDead has to reclaim entries whose thread died. Nothing tells the host
+    // about that, so without the sweep the entry would sit there until shutdown.
+    HANDLE stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    DWORD probeTid = 0;
+    HANDLE probe = CreateThread(nullptr, 0, ProbeThread, stop, 0, &probeTid);
+    Check(probe != nullptr, "probe thread starts");
+    if (probe) {
+        Sleep(150);   // let the thread reach its message loop
+        HookInjector::Inject st = HookInjector::Inject::Pending;
+        for (int i = 0; i < 200 && st != HookInjector::Inject::Ready; ++i) {
+            Sleep(25);
+            st = inj.ensure(probeTid, GetCurrentProcessId(), nullptr);
+        }
+        Check(st == HookInjector::Inject::Ready, "helper hooks the probe thread");
+
+        SetEvent(stop);
+        Check(WaitForSingleObject(probe, 5000) == WAIT_OBJECT_0, "probe thread exits");
+        for (int i = 0; i < 100 && proc::HelperRunning(); ++i) Sleep(50);
+
+        // The entry is stale now. After the sweep, asking again must start a fresh
+        // helper (Pending) rather than report the dead one as a failure.
+        inj.pruneDead();
+        Check(inj.ensure(probeTid, GetCurrentProcessId(), nullptr) == HookInjector::Inject::Pending,
+              "pruneDead drops the entry for a dead thread");
+        inj.removeAll();
+        CloseHandle(probe);
+    }
+    CloseHandle(stop);
+
+    // The documented bail-out: a helper that cannot open the host has no exit
+    // condition (it owns no window, so no WM_QUIT ever reaches it) and must not
+    // linger with the hook installed. Valid thread id so the hook installs, bogus
+    // host pid so opening the host fails.
+    {
+        std::wstring cmd = L"\"" + proc::ExeDir() + L"DeGhoster.Helper64.exe\" " +
+                           std::to_wstring(GetCurrentThreadId()) + L" 0 4294967292";
+        std::vector<wchar_t> buf(cmd.begin(), cmd.end());
+        buf.push_back(L'\0');
+        STARTUPINFOW si{ sizeof(si) };
+        PROCESS_INFORMATION pi{};
+        if (Check(CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE,
+                                 CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi) != FALSE,
+                  "helper starts for the host-handle test")) {
+            CloseHandle(pi.hThread);
+            DWORD code = 1;
+            Check(WaitForSingleObject(pi.hProcess, 10000) == WAIT_OBJECT_0,
+                  "helper exits instead of lingering without a host");
+            GetExitCodeProcess(pi.hProcess, &code);
+            Check(code == 5, "helper reports the host-handle failure (exit 5)");
+            CloseHandle(pi.hProcess);
+        }
+    }
+}
+
 static void ThemeTests()
 {
     std::printf("Theme tests\n");
@@ -164,6 +326,8 @@ int main()
 {
     SettingsTests();
     ThemeTests();
+    ProcessUtilTests();
+    HookInjectorTests();
     HookDllTests();
     std::printf("%s (%d failure(s))\n", g_failures == 0 ? "PASSED" : "FAILED", g_failures);
     return g_failures == 0 ? 0 : 1;

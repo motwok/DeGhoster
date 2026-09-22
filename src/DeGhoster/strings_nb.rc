@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Hvis du synes prosjektet er nyttig, vurder å støtte det:"
     IDS_INFO_THIRDPARTY "Tredjepartsmerknader / lisens"
     IDS_COL_WINDOW      "Vindu (Program)"
+    IDS_HOOK_MISSING    "En nødvendig DeGhoster-komponent mangler, så spøkelsesvinduer kan ikke rettes. Installer DeGhoster på nytt."
 END

@@ -1,7 +1,11 @@
 # 0005 — Inject 32-bit targets via a separate `Helper32.exe`
 
-- **Status:** Accepted
+- **Status:** Superseded by [0011](0011-helper-per-bitness.md)
 - **Deciders:** Emmo Emminghaus
+
+> Superseded: the host no longer installs `Hook64` directly. Every target, of either
+> bitness, is now injected through a helper process; see
+> [0011](0011-helper-per-bitness.md).
 
 ## Context
 
