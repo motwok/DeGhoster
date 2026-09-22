@@ -54,6 +54,27 @@
               window in the tray and would leave the process (and the hook) alive.
            2. Disable RM outright so it can never shut down a process we did not
               nominate. The worst case becomes a reboot prompt, not a killed app. -->
+    <!-- ...but WiX schedules WixCloseApplications just before InstallFiles
+         (sequence 3999), which is long after InstallValidate (1400), where the
+         in-use check actually happens. On an interactive upgrade the user would
+         therefore still be shown a "the following applications are using files"
+         dialog listing DeGhoster and every injected target. So close the running
+         instance ourselves, early: the quit switch (see ExeCommand below, where
+         a double dash is allowed and an XML comment may not contain one) ends the
+         host and then waits for its injector helpers to exit, and it is the
+         helpers going away that releases the hook DLLs in the targets.
+         Return="ignore" because a fresh install has no exe to run yet, and the
+         condition keeps it to upgrades and repairs. -->
+    <CustomAction Id="QuitRunningDeGhoster"
+                  FileRef="fil_DeGhosterExe"
+                  ExeCommand="--quit"
+                  Execute="immediate"
+                  Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="QuitRunningDeGhoster" After="CostFinalize"
+              Condition="Installed OR WIX_UPGRADE_DETECTED" />
+    </InstallExecuteSequence>
+
     <util:CloseApplication Id="CloseDeGhoster"
                            Target="DeGhoster.exe"
                            Description="DeGhoster is running and will be closed so the update can continue."

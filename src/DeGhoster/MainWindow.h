@@ -39,6 +39,11 @@ public:
     // true if one was found (the new process should then exit).
     static bool activateExisting();
 
+    // Closes a running instance and waits until it AND its injector helpers are
+    // gone, so the files they hold open can be replaced. Returns false if anything
+    // was still running when the budget ran out. Used by the installer.
+    static bool requestShutdown(DWORD timeoutMs);
+
     // GhostEngine::Listener
     void onTrackedChanged() override;
 

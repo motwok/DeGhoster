@@ -64,6 +64,31 @@ bool MainWindow::activateExisting()
     return true;
 }
 
+bool MainWindow::requestShutdown(DWORD timeoutMs)
+{
+    const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+
+    if (HWND h = FindWindowW(kClass, nullptr)) {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(h, &pid);
+        HANDLE p = pid ? OpenProcess(SYNCHRONIZE, FALSE, pid) : nullptr;
+        // The tray Exit path: uncloak the windows, wind the helpers down, quit.
+        PostMessageW(h, WM_COMMAND, IDC_EXIT, 0);
+        if (p) {
+            const ULONGLONG now = GetTickCount64();
+            WaitForSingleObject(p, now < deadline ? (DWORD)(deadline - now) : 0);
+            CloseHandle(p);
+        }
+    }
+
+    // The helpers go away on their own once the host is gone, but until they do
+    // they still hold a hook DLL open - which is the whole reason for waiting.
+    while (GetTickCount64() < deadline && proc::HelperRunning())
+        Sleep(100);
+
+    return !FindWindowW(kClass, nullptr) && !proc::HelperRunning();
+}
+
 MainWindow::MainWindow() : engine_(settings_) {}
 
 MainWindow::~MainWindow()

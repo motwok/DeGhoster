@@ -85,6 +85,36 @@ void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath)
 // FixInfo::disableKey() embeds this string in the registry opt-out key, so a
 // localized placeholder would orphan the opt-outs for untitled ghosts the moment
 // the UI language changed. The UI substitutes IDS_UNTITLED when drawing.
+bool HelperRunning()
+{
+    const std::wstring dir = ExeDir();
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return false;
+
+    bool found = false;
+    PROCESSENTRY32W e{ sizeof(e) };
+    for (BOOL ok = Process32FirstW(snap, &e); ok && !found; ok = Process32NextW(snap, &e)) {
+        if (_wcsicmp(e.szExeFile, L"DeGhoster.Helper32.exe") != 0 &&
+            _wcsicmp(e.szExeFile, L"DeGhoster.Helper64.exe") != 0)
+            continue;
+        // Match on the image path, not just the name: another user's helper is none
+        // of our business, and a process we cannot open cannot be one of ours.
+        HANDLE p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, e.th32ProcessID);
+        if (!p) continue;
+        wchar_t buf[1024];
+        DWORD sz = 1024;
+        if (QueryFullProcessImageNameW(p, 0, buf, &sz)) {
+            const std::wstring path = buf;
+            if (path.size() > dir.size() &&
+                _wcsnicmp(path.c_str(), dir.c_str(), dir.size()) == 0)
+                found = true;
+        }
+        CloseHandle(p);
+    }
+    CloseHandle(snap);
+    return found;
+}
+
 std::wstring WindowTitle(HWND h)
 {
     wchar_t t[256] = L"";

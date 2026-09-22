@@ -29,4 +29,9 @@ void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath);
 
 std::wstring WindowTitle(HWND);
 
+// True while an injector helper started from our own directory is still running.
+// The helpers hold a hook DLL open, so anything waiting for those files to become
+// replaceable (an installer, say) has to wait for them too.
+bool HelperRunning();
+
 } // namespace proc
