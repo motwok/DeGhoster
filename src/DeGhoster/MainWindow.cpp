@@ -64,7 +64,7 @@ MainWindow::~MainWindow()
     if (rowSizer_) ImageList_Destroy(rowSizer_);
 }
 
-bool MainWindow::create(HINSTANCE inst)
+bool MainWindow::create(HINSTANCE inst, bool startHidden)
 {
     inst_ = inst;
 
@@ -105,7 +105,9 @@ bool MainWindow::create(HINSTANCE inst)
     settings_.load();
     addTray();
     applyTheme();               // before ShowWindow, so the first paint has real colours
-    ShowWindow(h, SW_SHOW);
+    // Autostart (--taskbar) launches straight to the tray; the window is created
+    // hidden and the user opens it from the tray icon when they want it.
+    if (!startHidden) ShowWindow(h, SW_SHOW);
     layout();
     UpdateWindow(h);
 

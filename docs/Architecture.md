@@ -59,7 +59,7 @@ with no shared mutable state beyond the win-event thunk's single-instance pointe
 
 | Module | Role |
 |---|---|
-| `main.cpp` | `wWinMain`, GDI+/common-controls init, message loop; handles the `--register/--unregister-autostart` CLI hooks and exits |
+| `main.cpp` | `wWinMain`, GDI+/common-controls init, message loop; handles the `--register/--unregister-autostart` CLI hooks (and exits) and the `--taskbar` flag (start hidden in the tray, used by autostart) |
 | `MainWindow` | tray app and status window: toolbar, list, tray menu; owns theme/settings/engine, implements `GhostEngine::Listener` |
 | `InfoWindow` | dark-mode "About" popup (modeless, single-instance) |
 | `GhostEngine` | detection + cloak + reconcile core, driven by `SetWinEventHook` |

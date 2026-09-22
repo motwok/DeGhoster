@@ -5,11 +5,13 @@
   DeGhoster MSI. Dual-scope (per-user OR per-machine, chosen in the setup via
   WixUI_Advanced's InstallScopeDlg) with per-language feature selection
   (FeaturesDlg). The autostart entry is ALWAYS written per-user to
-  HKCU\...\CurrentVersion\Run - never to the machine-wide HKLM Run key:
+  HKCU\...\CurrentVersion\Run - never to the machine-wide HKLM Run key. The entry
+  launches DeGhoster with the taskbar switch, so sign-in brings it up hidden in
+  the tray (see the Value attributes below for the exact command line):
     * per-user install  = a HKCU RegistryValue component (self-cleaning)
     * per-machine install = Active Setup runs DeGhoster.exe with the
-                            register-autostart switch once per user at logon, so
-                            each user gets their own HKCU entry.
+                            register-autostart switch once per user at logon (which
+                            writes the same tray-hidden Run entry into their hive).
 
   Preprocessor variables (passed by packaging/build-msi.ps1 via -d):
     Version         MSI ProductVersion  (major.minor.patch, e.g. 0.0.1)
@@ -148,7 +150,7 @@
       <RegistryValue Root="HKCU"
                      Key="Software\Microsoft\Windows\CurrentVersion\Run"
                      Name="DeGhoster" Type="string"
-                     Value="&quot;[#fil_DeGhosterExe]&quot;" KeyPath="yes" />
+                     Value="&quot;[#fil_DeGhosterExe]&quot; --taskbar" KeyPath="yes" />
     </Component>
 
     <!-- Per-machine install: Active Setup runs the per-user registration for

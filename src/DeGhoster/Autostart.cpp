@@ -40,7 +40,9 @@ bool registerCurrentUser()
 {
     std::wstring path = exePath();
     if (path.empty()) return false;
-    std::wstring quoted = L"\"" + path + L"\"";
+    // --taskbar so the autostarted instance comes up in the tray instead of
+    // opening the main window at sign-in.
+    std::wstring quoted = L"\"" + path + L"\" --taskbar";
 
     HKEY k;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, kRunKey, 0, nullptr, 0,

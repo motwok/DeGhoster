@@ -151,6 +151,20 @@ public class UiCoverageTests
     }
 
     [Fact]
+    public void Taskbar_flag_starts_hidden_but_still_cloaks()
+    {
+        // Autostart launches with --taskbar: the engine must run (the ghost is
+        // cloaked, asserted inside StartWithGhost) while the main window stays
+        // hidden in the tray.
+        var (build, dg, sim, ghost, host) = StartWithGhost("64", null, "--taskbar");
+        try
+        {
+            Assert.False(IsWindowVisible(host), "main window should stay hidden with --taskbar");
+        }
+        finally { Cleanup(dg, sim); }
+    }
+
+    [Fact]
     public void Closing_a_ghost_drops_it_from_tracking()
     {
         var (build, dg, sim, ghost, host) = StartWithGhost("64", null);
@@ -165,7 +179,7 @@ public class UiCoverageTests
     }
 
     private (string build, Process dg, Process sim, IntPtr ghost, IntPtr host)
-        StartWithGhost(string bits, Dictionary<string, string>? env)
+        StartWithGhost(string bits, Dictionary<string, string>? env, string dgArgs = "")
     {
         string build = FindBuildDir();
         EnsureGlobalEnabled();
@@ -173,7 +187,7 @@ public class UiCoverageTests
         Process sim = Start(Path.Combine(build, $"GhostSim{bits}.exe"), $"--title \"{title}\" --timeout 90", build, null);
         IntPtr ghost = WaitFor(() => FindWindowEx(IntPtr.Zero, IntPtr.Zero, GhostClass, title), TimeSpan.FromSeconds(8));
         Assert.True(ghost != IntPtr.Zero, "ghost window not found");
-        Process dg = Start(Path.Combine(build, "DeGhoster.exe"), "", build, env);
+        Process dg = Start(Path.Combine(build, "DeGhoster.exe"), dgArgs, build, env);
         Assert.True(WaitUntil(() => Cloaked(ghost) != 0, TimeSpan.FromSeconds(20)), "window was not cloaked");
         IntPtr host = WaitFor(() => FindWindowEx(IntPtr.Zero, IntPtr.Zero, HostClass, null), TimeSpan.FromSeconds(5));
         Assert.True(host != IntPtr.Zero, "DeGhoster main window not found");
@@ -245,6 +259,8 @@ public class UiCoverageTests
     private static extern bool GetWindowRect(IntPtr hwnd, out RECT rc);
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
 }

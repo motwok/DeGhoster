@@ -43,7 +43,13 @@ never to the machine-wide `HKLM` Run key
   the first time they log on (via Windows *Active Setup*, which runs
   `DeGhoster.exe --register-autostart` once per user).
 
-You can toggle it yourself from a command prompt:
+The Run entry launches DeGhoster with the **`--taskbar`** switch, so at sign-in it
+starts **hidden in the system tray** rather than opening the status window. Open it
+whenever you like from the tray icon. (Starting `DeGhoster.exe --taskbar` yourself
+does the same thing; without the switch the window opens normally.)
+
+You can toggle autostart yourself from a command prompt — the entry it writes
+already includes `--taskbar`:
 
 ```powershell
 "<path>\DeGhoster.exe" --register-autostart      # add this user's autostart
@@ -58,6 +64,12 @@ automatically at sign-in — you launch it yourself. It still remembers your
 preferences (paused state, per-window opt-outs) under
 `HKEY_CURRENT_USER\Software\DeGhoster`; delete the folder (and, if you want a clean
 slate, that registry key) to remove it.
+
+Want the portable copy to start at sign-in anyway? Run it once with
+`--register-autostart` — this writes the same per-user, tray-hidden Run entry the
+installer would (`"<path>\DeGhoster.exe" --taskbar`); remove it with
+`--unregister-autostart`. Because the entry stores the exe's full path, re-register
+after moving the folder.
 
 ## Silent / unattended install (IT admins)
 
