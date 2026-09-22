@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Bu projeyi yararlı buluyorsanız, desteklemeyi düşünün:"
     IDS_INFO_THIRDPARTY "Üçüncü taraf bildirimleri / lisans"
     IDS_COL_WINDOW      "Pencere (Program)"
+    IDS_HOOK_MISSING    "DeGhoster.Hook64.dll yüklenemedi. 64 bit uygulamalardaki hayalet pencereler düzeltilemez."
 END

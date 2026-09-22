@@ -128,6 +128,21 @@ LRESULT CALLBACK InfoWindow::WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     return self->handle(msg, wp, lp);
 }
 
+void InfoWindow::applyDpiAssets()
+{
+    // Own our font instead of borrowing the caller's: the main window deletes its
+    // font on WM_DPICHANGED, which would leave this modeless window on a freed HFONT.
+    if (uiFont_) DeleteObject(uiFont_);
+    uiFont_ = CreateFontW(-MulDiv(9, dpi_, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                          DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    if (icon_) DestroyIcon(icon_);
+    icon_ = (HICON)LoadImageW((HINSTANCE)GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE),
+                              MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON, S(48), S(48), 0);
+    if (licenseLink_) SendMessageW(licenseLink_, WM_SETFONT, (WPARAM)uiFont_, TRUE);
+    if (link_)        SendMessageW(link_, WM_SETFONT, (WPARAM)uiFont_, TRUE);
+}
+
 void InfoWindow::layout()
 {
     RECT rc; GetClientRect(hwnd_, &rc);
@@ -174,14 +189,7 @@ LRESULT InfoWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
     switch (msg) {
     case WM_CREATE:
         brush_ = CreateSolidBrush(theme_.back);
-        // Own our font instead of borrowing the caller's: the main window deletes
-        // its font on WM_DPICHANGED, which would leave a modeless Info window using
-        // a freed HFONT.
-        uiFont_ = CreateFontW(-MulDiv(9, dpi_, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-        icon_ = (HICON)LoadImageW((HINSTANCE)GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE),
-                                  MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON, S(48), S(48), 0);
+        applyDpiAssets();
         {
             std::wstring lic = std::wstring(L"<a>") + loc::t(IDS_INFO_THIRDPARTY) + L"</a>";
             licenseLink_ = CreateWindowExW(0, WC_LINK, lic.c_str(),
@@ -200,6 +208,20 @@ LRESULT InfoWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         return 0;
 
     case WM_SIZE: layout(); return 0;
+
+    case WM_DPICHANGED: {
+        // The process is PerMonitorV2, so dragging this window to a monitor with a
+        // different scaling rescales the frame. Without this the font, icon and
+        // control positions stayed at the DPI the window was opened at.
+        dpi_ = HIWORD(wp);
+        applyDpiAssets();
+        const RECT* p = (const RECT*)lp;
+        SetWindowPos(hwnd_, nullptr, p->left, p->top, p->right - p->left, p->bottom - p->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        layout();
+        InvalidateRect(hwnd_, nullptr, TRUE);
+        return 0;
+    }
 
     case WM_ERASEBKGND: {
         RECT rc; GetClientRect(hwnd_, &rc);

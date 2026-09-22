@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Si ce projet vous est utile, pensez à le soutenir :"
     IDS_INFO_THIRDPARTY "Mentions des tiers / licence"
     IDS_COL_WINDOW      "Fenêtre (Exécutable)"
+    IDS_HOOK_MISSING    "Impossible de charger DeGhoster.Hook64.dll. Les fenêtres fantômes des applications 64 bits ne peuvent pas être corrigées."
 END

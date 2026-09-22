@@ -35,7 +35,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int)
     // two tray icons and two engines fighting over the same windows. Hand off to the
     // running instance and exit. The mutex is released automatically on exit.
     HANDLE instanceMutex = CreateMutexW(nullptr, TRUE, L"Local\\DeGhoster.SingleInstance");
-    if (instanceMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
+    const DWORD mutexErr = GetLastError();
+    // ERROR_ACCESS_DENIED means the mutex exists but belongs to an instance we are
+    // not allowed to open, typically one running elevated. That is still "already
+    // running": treating the null handle as "first instance" started a second tray
+    // icon and a second engine fighting over the same windows.
+    const bool alreadyRunning = instanceMutex ? (mutexErr == ERROR_ALREADY_EXISTS)
+                                              : (mutexErr == ERROR_ACCESS_DENIED);
+    if (alreadyRunning) {
         MainWindow::activateExisting();
         return 0;
     }

@@ -16,8 +16,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #include "ProcessUtil.h"
-#include "Loc.h"
-#include "resource.h"
 #include <tlhelp32.h>
 #include <unordered_map>
 #include <utility>
@@ -83,11 +81,15 @@ void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath)
     }
 }
 
+// The raw title, empty when the window has none. Deliberately NOT localized:
+// FixInfo::disableKey() embeds this string in the registry opt-out key, so a
+// localized placeholder would orphan the opt-outs for untitled ghosts the moment
+// the UI language changed. The UI substitutes IDS_UNTITLED when drawing.
 std::wstring WindowTitle(HWND h)
 {
     wchar_t t[256] = L"";
     GetWindowTextW(h, t, 256);
-    return t[0] ? std::wstring(t) : std::wstring(loc::t(IDS_UNTITLED));
+    return std::wstring(t);
 }
 
 } // namespace proc

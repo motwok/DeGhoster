@@ -43,48 +43,79 @@ ULONGLONG HookInjector::threadBornTime(DWORD threadId)
     return born;
 }
 
-bool HookInjector::haveLiveEntry(DWORD threadId)
+// A helper that never signals readiness within this long is written off, so a
+// wedged helper cannot keep a window in limbo forever.
+namespace { constexpr ULONGLONG kHelperReadyTimeoutMs = 5000; }
+
+void HookInjector::nudge(DWORD threadId)
 {
-    ULONGLONG born = threadBornTime(threadId);
+    // Removing a hook does not unmap the DLL: Windows only lets go once the hooked
+    // thread next pulls a message, so an idle target keeps DeGhoster.Hook64.dll
+    // mapped - and the file locked - indefinitely. That matters beyond tidiness: an
+    // installer replacing the DLL sees those targets as holding it and offers to
+    // shut them down. WM_NULL goes to the thread queue, not to a window, so it is a
+    // no-op for the target beyond waking its pump.
+    PostThreadMessageW(threadId, WM_NULL, 0, 0);
+}
+
+void HookInjector::dropHook(DWORD threadId, HHOOK hook)
+{
+    if (remove_) remove_(hook);
+    nudge(threadId);
+}
+
+void HookInjector::closeHelper(HelperEntry& e)
+{
+    if (e.proc)  { TerminateProcess(e.proc, 0); CloseHandle(e.proc); e.proc = nullptr; }
+    if (e.ready) { CloseHandle(e.ready); e.ready = nullptr; }
+}
+
+HookInjector::Inject HookInjector::ensure(DWORD threadId, DWORD pid, HWND host)
+{
+    const ULONGLONG born = threadBornTime(threadId);
 
     auto h = hooks_.find(threadId);
     if (h != hooks_.end()) {
-        if (born && born == h->second.born) return true;   // same thread, hook still ours
-        if (remove_) remove_(h->second.hook);              // stale: thread id was recycled
+        if (born && born == h->second.born) return Inject::Ready;   // still ours
+        dropHook(threadId, h->second.hook);                         // id was recycled
         hooks_.erase(h);
     }
 
     auto p = helpers_.find(threadId);
     if (p != helpers_.end()) {
-        bool alive = p->second.proc &&
-                     WaitForSingleObject(p->second.proc, 0) == WAIT_TIMEOUT;
-        if (alive && born && born == p->second.born) return true;
-        if (p->second.proc) { TerminateProcess(p->second.proc, 0); CloseHandle(p->second.proc); }
+        HelperEntry& e = p->second;
+        const bool alive = e.proc && WaitForSingleObject(e.proc, 0) == WAIT_TIMEOUT;
+        const bool sameThread = born && born == e.born;
+        if (alive && sameThread) {
+            if (e.ready && WaitForSingleObject(e.ready, 0) == WAIT_OBJECT_0)
+                return Inject::Ready;
+            if (GetTickCount64() - e.startedAt < kHelperReadyTimeoutMs)
+                return Inject::Pending;      // still coming up; ask again next tick
+            closeHelper(e);
+            helpers_.erase(p);
+            return Inject::Failed;           // never signalled: let the pid cool down
+        }
+        closeHelper(e);
         helpers_.erase(p);
+        // A helper that died on us is reported as a failure so the caller's pid
+        // cooldown throttles the retry. A live helper bound to a recycled thread
+        // id is simply stale, so fall through and start a fresh one.
+        if (!alive || !born) return Inject::Failed;
     }
-    return false;
-}
-
-bool HookInjector::ensure(DWORD threadId, DWORD pid, HWND host)
-{
-    if (haveLiveEntry(threadId)) return true;
-
-    ULONGLONG born = threadBornTime(threadId);
 
     if (proc::IsWow64(pid)) {
         std::wstring exe = exeDir_ + L"DeGhoster.Helper32.exe";
-        if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+        if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) return Inject::Failed;
 
-        // The helper installs the hook asynchronously in its own process. Unlike
-        // the in-process x64 path, the hook is NOT live the instant ensure()
-        // returns, so we must not post DGH_CLOAK yet or it is lost. The helper
-        // signals this manual-reset event once its hook is installed; we wait for
-        // it (or the helper dying, or a timeout) before returning.
-        DWORD myPid = GetCurrentProcessId();
+        // The helper installs the hook asynchronously in its own process, so the
+        // hook is NOT live when this returns and posting DGH_CLOAK now would lose
+        // it. The helper sets this manual-reset event once its hook is installed.
+        const DWORD myPid = GetCurrentProcessId();
         std::wstring evName = L"Local\\DeGhoster.HelperReady." +
                               std::to_wstring(myPid) + L"." + std::to_wstring(threadId);
         HANDLE ready = CreateEventW(nullptr, TRUE, FALSE, evName.c_str());
-        if (!ready) return false;
+        if (!ready) return Inject::Failed;
+        ResetEvent(ready);   // a same-named leftover may still be signalled
 
         // Build the command line in a std::wstring: the exe path can be up to
         // MAX_PATH, so a fixed 256-wchar buffer (old wsprintfW) could overflow.
@@ -100,38 +131,56 @@ bool HookInjector::ensure(DWORD threadId, DWORD pid, HWND host)
         if (!CreateProcessW(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE,
                             CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
             CloseHandle(ready);
-            return false;
+            return Inject::Failed;
         }
         CloseHandle(pi.hThread);
 
-        HANDLE waits[2] = { ready, pi.hProcess };
-        DWORD w = WaitForMultipleObjects(2, waits, FALSE, 5000);
-        CloseHandle(ready);
-        if (w != WAIT_OBJECT_0) {
-            // Helper failed to install the hook (it exited, or timed out). Caching
-            // the dead handle here would strand the window in pending_ forever, so
-            // tear it down and report failure instead.
-            TerminateProcess(pi.hProcess, 0);
-            CloseHandle(pi.hProcess);
-            return false;
-        }
-        helpers_[threadId] = { pi.hProcess, born };
-        return true;
+        // Deliberately no wait here: ensure() runs on the UI thread from WinEvent
+        // callbacks, WM_TIMER and click handlers, and blocking for seconds froze
+        // the window. The caller's periodic tick re-drives this and the entry
+        // flips to Ready as soon as the helper signals.
+        helpers_[threadId] = { pi.hProcess, ready, born, GetTickCount64() };
+        return Inject::Pending;
     }
 
-    if (!install_) return false;
+    if (!install_) return Inject::Failed;
     HHOOK hk = install_(threadId, host);
-    if (!hk) return false;
+    if (!hk) return Inject::Failed;
     hooks_[threadId] = { hk, born };
-    return true;
+    return Inject::Ready;
+}
+
+void HookInjector::pruneDead()
+{
+    // Nothing tells us when a hooked thread exits, so entries for dead threads
+    // would otherwise sit here (holding a live helper process) until shutdown.
+    for (auto it = hooks_.begin(); it != hooks_.end(); ) {
+        const ULONGLONG born = threadBornTime(it->first);
+        if (!born || born != it->second.born) {
+            dropHook(it->first, it->second.hook);
+            it = hooks_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (auto it = helpers_.begin(); it != helpers_.end(); ) {
+        const ULONGLONG born = threadBornTime(it->first);
+        const bool alive = it->second.proc &&
+                           WaitForSingleObject(it->second.proc, 0) == WAIT_TIMEOUT;
+        if (!alive || !born || born != it->second.born) {
+            closeHelper(it->second);
+            nudge(it->first);
+            it = helpers_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void HookInjector::removeAll()
 {
-    if (remove_)
-        for (auto& kv : hooks_) remove_(kv.second.hook);
+    for (auto& kv : hooks_) dropHook(kv.first, kv.second.hook);
     hooks_.clear();
-    for (auto& kv : helpers_)
-        if (kv.second.proc) { TerminateProcess(kv.second.proc, 0); CloseHandle(kv.second.proc); }
+    for (auto& kv : helpers_) { closeHelper(kv.second); nudge(kv.first); }
     helpers_.clear();
 }

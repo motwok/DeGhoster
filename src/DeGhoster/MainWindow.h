@@ -61,6 +61,7 @@ private:
     void showWindow();
     void showTrayMenu();
     void addTray();
+    void warnHooksMissing();   // balloon when the x64 hook DLL failed to load
 
     void setGlobalEnabled(bool);
     void toggleWindow(HWND ghost);

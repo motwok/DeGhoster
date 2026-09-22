@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "If you find this project useful, please consider supporting it:"
     IDS_INFO_THIRDPARTY "Third-party notices / license"
     IDS_COL_WINDOW      "Window (Executable)"
+    IDS_HOOK_MISSING    "DeGhoster.Hook64.dll could not be loaded. Ghost windows in 64-bit apps cannot be fixed."
 END

@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Ha hasznosnak találod ezt a projektet, fontold meg a támogatását:"
     IDS_INFO_THIRDPARTY "Harmadik felek közleményei / licenc"
     IDS_COL_WINDOW      "Ablak (Program)"
+    IDS_HOOK_MISSING    "A DeGhoster.Hook64.dll nem tölthető be. A 64 bites alkalmazások szellemablakai nem javíthatók."
 END

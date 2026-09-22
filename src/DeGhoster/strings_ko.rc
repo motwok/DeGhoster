@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "이 프로젝트가 유용하다면 후원을 고려해 주세요:"
     IDS_INFO_THIRDPARTY "타사 고지 / 라이선스"
     IDS_COL_WINDOW      "창 (실행 파일)"
+    IDS_HOOK_MISSING    "DeGhoster.Hook64.dll을 로드할 수 없습니다. 64비트 앱의 고스트 창은 해결할 수 없습니다."
 END

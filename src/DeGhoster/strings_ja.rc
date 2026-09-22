@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "このプロジェクトが役に立ったら、ぜひご支援ください:"
     IDS_INFO_THIRDPARTY "サードパーティの通知 / ライセンス"
     IDS_COL_WINDOW      "ウィンドウ (実行ファイル)"
+    IDS_HOOK_MISSING    "DeGhoster.Hook64.dll を読み込めませんでした。64 ビット アプリのゴーストウィンドウは修正できません。"
 END

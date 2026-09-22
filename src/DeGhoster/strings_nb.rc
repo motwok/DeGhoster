@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "Hvis du synes prosjektet er nyttig, vurder å støtte det:"
     IDS_INFO_THIRDPARTY "Tredjepartsmerknader / lisens"
     IDS_COL_WINDOW      "Vindu (Program)"
+    IDS_HOOK_MISSING    "DeGhoster.Hook64.dll kunne ikke lastes inn. Spøkelsesvinduer i 64-biters apper kan ikke rettes."
 END

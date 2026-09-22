@@ -36,4 +36,5 @@ BEGIN
     IDS_INFO_SUPPORT    "如果本项目对你有帮助，欢迎支持："
     IDS_INFO_THIRDPARTY "第三方声明 / 许可证"
     IDS_COL_WINDOW      "窗口（可执行文件）"
+    IDS_HOOK_MISSING    "无法加载 DeGhoster.Hook64.dll。64 位应用中的幽灵窗口无法修复。"
 END

@@ -26,8 +26,15 @@ class HookInjector {
 public:
     ~HookInjector();
 
+    // Outcome of ensure(). The x86 path starts a helper process and cannot report
+    // success synchronously, so callers must tolerate Pending and come back later
+    // instead of blocking the UI thread until the helper signals readiness.
+    enum class Inject { Ready, Pending, Failed };
+
     bool load(const std::wstring& exeDir);
-    bool ensure(DWORD threadId, DWORD pid, HWND host);
+    bool available() const { return install_ != nullptr; }
+    Inject ensure(DWORD threadId, DWORD pid, HWND host);
+    void pruneDead();    // release entries whose target thread no longer exists
     void removeAll();
 
 private:
@@ -38,11 +45,13 @@ private:
     // a restarted target can reuse an id we still hold an entry for. We pin each
     // entry to the thread's creation time and drop it when that no longer matches.
     struct HookEntry   { HHOOK  hook = nullptr; ULONGLONG born = 0; };
-    struct HelperEntry { HANDLE proc = nullptr; ULONGLONG born = 0; };
+    struct HelperEntry { HANDLE proc = nullptr; HANDLE ready = nullptr;
+                         ULONGLONG born = 0; ULONGLONG startedAt = 0; };
 
     static ULONGLONG threadBornTime(DWORD threadId);
-    // Returns true if a live, matching entry already exists; prunes a stale one.
-    bool haveLiveEntry(DWORD threadId);
+    static void closeHelper(HelperEntry&);
+    static void nudge(DWORD threadId);          // make the target unmap the DLL
+    void dropHook(DWORD threadId, HHOOK hook);  // unhook + nudge
 
     HMODULE   dll_ = nullptr;
     InstallFn install_ = nullptr;
