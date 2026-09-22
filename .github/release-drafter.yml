@@ -9,6 +9,9 @@
 # (Settings -> Labels), or apply labels manually on each PR:
 #   feature, fix, docs, chore, breaking, skip-changelog
 #
+# Both halves of Release Drafter v7 read this one file: the autolabeler
+# sub-action uses the `autolabeler` block, the root action uses everything else.
+#
 # Categories use the `when` condition form. The older `categories[*].labels`,
 # `exclude-labels` and `version-resolver.*.labels` fields still work but are
 # deprecated and warn on every run; see release-drafter PR #1558.

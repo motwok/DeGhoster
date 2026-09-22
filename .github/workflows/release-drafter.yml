@@ -3,7 +3,7 @@ name: Release Drafter
 on:
   push:
     branches: [ master ]
-  pull_request_target:
+  pull_request:
     types: [opened, reopened, synchronize]
 
 permissions:
@@ -11,28 +11,20 @@ permissions:
 
 jobs:
   # Apply the labels the release notes are grouped by, and that decide the next
-  # version. This has to run on pull_request_target, not pull_request: on a plain
-  # pull_request the ref is refs/pull/<n>/merge, an ephemeral merge commit, and
-  # Release Drafter answers that by forcing dry-run mode - so it labelled nothing
-  # and pull requests reached master unlabelled, landing in the notes without a
-  # category and leaving the version bump to fall back on the default.
-  #
-  # pull_request_target runs in the context of the base branch with a writable
-  # token, which is only safe because nothing here checks out or executes the
-  # pull request's code. Keep it that way.
+  # version. Release Drafter v7 split the action in two: the root action only
+  # drafts, and labelling moved to the autolabeler sub-action. Calling the root
+  # action on a pull request, as this workflow used to, therefore labelled
+  # nothing at all - which is how pull requests reached master unlabelled.
   autolabel:
-    if: github.event_name == 'pull_request_target'
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: release-drafter/release-drafter@v7
+      - uses: release-drafter/release-drafter/autolabeler@v7
         with:
           config-name: release-drafter.yml
-          disable-releaser: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Rebuild the draft release notes from the pull requests merged so far.
   update_release_draft:
@@ -45,6 +37,5 @@ jobs:
       - uses: release-drafter/release-drafter@v7
         with:
           config-name: release-drafter.yml
-          disable-autolabeler: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
