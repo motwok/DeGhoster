@@ -9,6 +9,15 @@ project(DeGhoster LANGUAGES CXX)
 if(MSVC)
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "ProgramDatabase")
   add_link_options($<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
+
+  # Static CRT (/MT) for every binary: the hook DLL is loaded into FOREIGN
+  # processes, whose loader resolves MSVCP140/VCRUNTIME140 against the target's
+  # search path - not ours - so shipping the redist next to DeGhoster.exe cannot
+  # satisfy it. Static linking is the only app-local option, and it also frees
+  # Helper32 from needing the x86 redist installed. Safe here because no CRT
+  # state crosses a module boundary: host/hook talk via window messages, and
+  # host/helper via a command line plus a named event.
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 # Derive the version from git (GitVersion) and generate src/Version.h for the
