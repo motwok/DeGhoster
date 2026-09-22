@@ -81,10 +81,6 @@ void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath)
     }
 }
 
-// The raw title, empty when the window has none. Deliberately NOT localized:
-// FixInfo::disableKey() embeds this string in the registry opt-out key, so a
-// localized placeholder would orphan the opt-outs for untitled ghosts the moment
-// the UI language changed. The UI substitutes IDS_UNTITLED when drawing.
 bool HelperRunning()
 {
     const std::wstring dir = ExeDir();
@@ -115,6 +111,10 @@ bool HelperRunning()
     return found;
 }
 
+// The raw title, empty when the window has none. Deliberately NOT localized:
+// FixInfo::disableKey() embeds this string in the registry opt-out key, so a
+// localized placeholder would orphan the opt-outs for untitled ghosts the moment
+// the UI language changed. The UI substitutes IDS_UNTITLED when drawing.
 std::wstring WindowTitle(HWND h)
 {
     wchar_t t[256] = L"";

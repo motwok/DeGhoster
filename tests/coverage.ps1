@@ -42,17 +42,37 @@ $out = Join-Path $repo 'coverage'
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 # Clear only THIS run's outputs; keep coverage\manual.cov (from the guided run)
 # and the merged report so a re-run doesn't destroy the manual coverage.
-Remove-Item "$out\coverage.cobertura.xml", "$out\auto.cov" -Force -ErrorAction SilentlyContinue
+Remove-Item "$out\coverage.cobertura.xml", "$out\auto.cov", "$out\unit.cov", "$out\integration.cov" -Force -ErrorAction SilentlyContinue
 if (Test-Path "$out\html") { Remove-Item "$out\html" -Recurse -Force }
 
-Write-Host "==> Running tests under OpenCppCoverage..." -ForegroundColor Cyan
+# Two runs, because OpenCppCoverage drives exactly one command each: the native
+# unit tests (deterministic, no desktop interaction) and the integration tests
+# (which drive real windows). Their results are merged into one report - running
+# only the integration tests used to leave everything UnitTests.exe covers out of
+# the numbers entirely.
+Write-Host "==> Running native unit tests under OpenCppCoverage..." -ForegroundColor Cyan
 & $occ `
     --sources "$repo\src" `
     --modules "$repo\build" `
     --cover_children --quiet `
+    --export_type "binary:$out\unit.cov" `
+    -- "$repo\build\UnitTests.exe"
+if ($LASTEXITCODE -ne 0) { throw "UnitTests.exe failed." }
+
+Write-Host "==> Running integration tests under OpenCppCoverage..." -ForegroundColor Cyan
+& $occ `
+    --sources "$repo\src" `
+    --modules "$repo\build" `
+    --cover_children --quiet `
+    --export_type "binary:$out\integration.cov" `
+    -- dotnet test "$repo\tests\DeGhoster.Tests\DeGhoster.Tests.csproj" -c Release --nologo --disable-build-servers
+
+Write-Host "==> Merging..." -ForegroundColor Cyan
+& $occ `
+    --input_coverage "$out\unit.cov" `
+    --input_coverage "$out\integration.cov" `
     --export_type "cobertura:$out\coverage.cobertura.xml" `
     --export_type "html:$out\html" `
-    --export_type "binary:$out\auto.cov" `
-    -- dotnet test "$repo\tests\DeGhoster.Tests\DeGhoster.Tests.csproj" -c Release --nologo --disable-build-servers
+    --export_type "binary:$out\auto.cov"
 
 Write-Host "Coverage report: $out\html\index.html" -ForegroundColor Green

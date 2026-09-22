@@ -2,7 +2,9 @@
 # root). Built only in the x64 configure; not shipped.
 add_executable(UnitTests UnitTests.cpp
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/Settings.cpp"
-  "${CMAKE_SOURCE_DIR}/src/DeGhoster/Theme.cpp")
+  "${CMAKE_SOURCE_DIR}/src/DeGhoster/Theme.cpp"
+  "${CMAKE_SOURCE_DIR}/src/DeGhoster/ProcessUtil.cpp"
+  "${CMAKE_SOURCE_DIR}/src/DeGhoster/HookInjector.cpp")
 set_target_properties(UnitTests PROPERTIES OUTPUT_NAME "UnitTests")
 target_include_directories(UnitTests PRIVATE
   "${CMAKE_SOURCE_DIR}/src/DeGhoster"
