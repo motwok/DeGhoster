@@ -28,6 +28,7 @@
 
 #include <commctrl.h>
 #include <uxtheme.h>
+#include <windowsx.h>   // GET_X_LPARAM
 #include <algorithm>
 #include <string>
 
@@ -39,6 +40,9 @@ namespace {
 constexpr wchar_t kClass[] = L"DeGhosterMainWindow";
 
 constexpr UINT WM_TRAY = WM_APP + 0x40;
+// Posted by the list subclass below when the eye cell was clicked.
+constexpr UINT WM_EYE_TOGGLE = WM_APP + 0x41;
+constexpr UINT_PTR kListSubclassId = 1;
 constexpr UINT_PTR kPendingTimer = 1;
 enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT };
 enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_WIN_BASE = 3000 };
@@ -46,6 +50,36 @@ enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_WIN_BASE = 3000 };
 // Cross-process "show yourself" ping from a second launch. RegisterWindowMessage
 // returns the same value in every process for this string.
 UINT showExistingMsg() { static UINT m = RegisterWindowMessageW(L"DeGhoster_ShowExistingInstance"); return m; }
+
+// The list view swallows the click that activates an inactive window: it emits no
+// NM_CLICK for it, so the eye needed a second click whenever the window was not
+// already in front. A subclass sees the raw button messages whatever the control
+// decides to do with them, so one click is enough again.
+//
+// The refdata carries the cell the press started on (item + 1, or 0 for "not the
+// eye"), so a press that drifts off the cell before release does not toggle.
+LRESULT CALLBACK ListProc(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR ref)
+{
+    if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP) {
+        LVHITTESTINFO ht{};
+        ht.pt.x = GET_X_LPARAM(lp);
+        ht.pt.y = GET_Y_LPARAM(lp);
+        ListView_SubItemHitTest(h, &ht);
+        const DWORD_PTR cell = (ht.iItem >= 0 && ht.iSubItem == 1) ? (DWORD_PTR)(ht.iItem + 1) : 0;
+
+        if (msg == WM_LBUTTONDOWN) {
+            SetWindowSubclass(h, ListProc, kListSubclassId, cell);
+        } else {
+            if (cell && cell == ref) {
+                LVITEMW it{}; it.mask = LVIF_PARAM; it.iItem = ht.iItem;
+                if (ListView_GetItem(h, &it))
+                    PostMessageW(GetParent(h), WM_EYE_TOGGLE, (WPARAM)it.lParam, 0);
+            }
+            SetWindowSubclass(h, ListProc, kListSubclassId, 0);
+        }
+    }
+    return DefSubclassProc(h, msg, wp, lp);
+}
 
 // FixInfo::title is stored raw because it is part of the registry opt-out key, so
 // the placeholder for an untitled window is substituted here, at display time.
@@ -187,6 +221,7 @@ void MainWindow::onCreate()
                             LVS_NOSORTHEADER | LVS_SHAREIMAGELISTS,
                             0, 0, 0, 0, hwnd_, (HMENU)IDC_LIST, inst_, nullptr);
     ListView_SetExtendedListViewStyle(list_, LVS_EX_DOUBLEBUFFER);
+    SetWindowSubclass(list_, ListProc, kListSubclassId, 0);
     LVCOLUMNW col{}; col.mask = LVCF_TEXT | LVCF_WIDTH;
     col.pszText = (LPWSTR)loc::t(IDS_COL_WINDOW); col.cx = S(300); ListView_InsertColumn(list_, 0, &col);
     col.mask |= LVCF_FMT; col.fmt = LVCFMT_CENTER; col.pszText = (LPWSTR)L""; col.cx = S(54);
@@ -382,16 +417,6 @@ LRESULT MainWindow::listCustomDraw(NMLVCUSTOMDRAW* cd)
     return CDRF_DODEFAULT;
 }
 
-void MainWindow::onListClick(const NMITEMACTIVATE* ia)
-{
-    LVHITTESTINFO ht{}; ht.pt = ia->ptAction;
-    ListView_SubItemHitTest(list_, &ht);
-    if (ht.iSubItem != 1 || ht.iItem < 0) return;
-    LVITEMW it{}; it.mask = LVIF_PARAM; it.iItem = ht.iItem;
-    ListView_GetItem(list_, &it);
-    toggleWindow((HWND)it.lParam);
-}
-
 void MainWindow::setGlobalEnabled(bool on)
 {
     if (settings_.globalEnabled() == on) return;
@@ -507,14 +532,14 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
 
+    case WM_EYE_TOGGLE: toggleWindow((HWND)wp); return 0;
+
     case WM_DRAWITEM: drawButton((DRAWITEMSTRUCT*)lp); return TRUE;
 
     case WM_NOTIFY: {
         auto* n = (NMHDR*)lp;
-        if (n->idFrom == IDC_LIST) {
-            if (n->code == NM_CUSTOMDRAW) return listCustomDraw((NMLVCUSTOMDRAW*)lp);
-            if (n->code == NM_CLICK) onListClick((NMITEMACTIVATE*)lp);
-        }
+        if (n->idFrom == IDC_LIST && n->code == NM_CUSTOMDRAW)
+            return listCustomDraw((NMLVCUSTOMDRAW*)lp);
         return 0;
     }
 

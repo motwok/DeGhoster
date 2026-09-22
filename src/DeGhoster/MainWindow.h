@@ -61,7 +61,6 @@ private:
 
     void drawButton(const DRAWITEMSTRUCT*);
     LRESULT listCustomDraw(NMLVCUSTOMDRAW*);
-    void onListClick(const NMITEMACTIVATE*);
 
     void showWindow();
     void showTrayMenu();

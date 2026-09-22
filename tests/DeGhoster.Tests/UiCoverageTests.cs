@@ -108,9 +108,11 @@ public class UiCoverageTests
                 rowTop = hr.bottom;
 
             // Eye cell = rightmost column, first row. A REAL click (mouse_event at
-            // the cursor) makes the list fire NM_CLICK -> onListClick -> toggle,
-            // which a posted WM_LBUTTON* does not. The first click may only
-            // activate the window, so click again if it didn't take.
+            // the cursor) is needed; a posted WM_LBUTTON* does not reach the
+            // control the same way. ONE click has to be enough, including when the
+            // window is not in front - the list swallows the click that activates
+            // it, which is why the eye is driven from the raw button messages
+            // instead of NM_CLICK. Do not paper over a second click here again.
             void ClickEye()
             {
                 SetCursorPos(r.right - 26, rowTop + 15);
@@ -119,10 +121,8 @@ public class UiCoverageTests
                 mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
             }
             ClickEye();
-            if (!WaitUntil(() => Cloaked(ghost) == 0, TimeSpan.FromSeconds(3))) ClickEye();
-
-            Assert.True(WaitUntil(() => Cloaked(ghost) == 0, TimeSpan.FromSeconds(5)),
-                        "clicking the eye did not un-cloak the window");
+            Assert.True(WaitUntil(() => Cloaked(ghost) == 0, TimeSpan.FromSeconds(6)),
+                        "a single click on the eye did not un-cloak the window");
         }
         finally { Cleanup(dg, sim); }
     }
@@ -134,18 +134,37 @@ public class UiCoverageTests
         try
         {
             SetCursorPos(500, 500);
-            // Open the modal tray menu (right-click). It appears at the cursor and
-            // blocks DeGhoster's thread until a selection is made.
-            PostMessage(host, WM_TRAY, IntPtr.Zero, (IntPtr)WM_RBUTTONUP);
-            Thread.Sleep(600);
-            // Menu order: Status Window (default), Active, separator, <window entry>,
-            // separator, About, Exit. Navigate to the window entry and select it.
-            for (int i = 0; i < 3; i++) { Key(VK_DOWN); Thread.Sleep(90); }
-            Key(VK_RETURN);
+            // The menu is driven from the keyboard, and keystrokes go to whatever
+            // holds the foreground. A real tray click grants DeGhoster the right to
+            // take it; a posted WM_TRAY does not, so SetForegroundWindow inside
+            // showTrayMenu is simply refused and the menu opens without keyboard
+            // focus - the test then types into whatever window happens to be in
+            // front. Hand the foreground over deliberately first.
+            // Driving a modal menu means competing for the foreground with whatever
+            // else is on the desktop, so give it a few attempts rather than one.
+            bool uncloaked = false;
+            string why = "the tray menu never opened";
+            for (int attempt = 0; attempt < 3 && !uncloaked; attempt++)
+            {
+                if (!ForceForeground(host)) { why = "could not put DeGhoster in the foreground"; continue; }
 
-            bool uncloaked = WaitUntil(() => Cloaked(ghost) == 0, TimeSpan.FromSeconds(6));
-            if (!uncloaked) Key(VK_ESCAPE);   // safety: dismiss a stuck menu
-            Assert.True(uncloaked, "toggling the window via the tray menu did not un-cloak it");
+                // Open the modal tray menu (right-click). It appears at the cursor
+                // and blocks DeGhoster's thread until a selection is made.
+                SetCursorPos(500, 500);
+                PostMessage(host, WM_TRAY, IntPtr.Zero, (IntPtr)WM_RBUTTONUP);
+                Thread.Sleep(600);
+                if (FindWindowEx(IntPtr.Zero, IntPtr.Zero, "#32768", null) == IntPtr.Zero) continue;
+
+                // Menu order: Status Window (default), Active, separator, <window
+                // entry>, separator, About, Exit. Walk to the entry and pick it.
+                for (int i = 0; i < 3; i++) { Key(VK_DOWN); Thread.Sleep(90); }
+                Key(VK_RETURN);
+
+                why = "toggling the window via the tray menu did not un-cloak it";
+                uncloaked = WaitUntil(() => Cloaked(ghost) == 0, TimeSpan.FromSeconds(6));
+                if (!uncloaked) { Key(VK_ESCAPE); Thread.Sleep(300); }   // dismiss a stuck menu
+            }
+            Assert.True(uncloaked, why);
         }
         finally { Cleanup(dg, sim); }
     }
@@ -192,6 +211,30 @@ public class UiCoverageTests
         IntPtr host = WaitFor(() => FindWindowEx(IntPtr.Zero, IntPtr.Zero, HostClass, null), TimeSpan.FromSeconds(5));
         Assert.True(host != IntPtr.Zero, "DeGhoster main window not found");
         return (build, dg, sim, ghost, host);
+    }
+
+    // Attaching to the foreground thread's input queue is the documented way to
+    // hand the foreground to another window; a bare SetForegroundWindow from a
+    // background process is refused.
+    private static bool ForceForeground(IntPtr hwnd)
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            IntPtr fg = GetForegroundWindow();
+            if (fg == hwnd) return true;
+            uint fgThread = GetWindowThreadProcessId(fg, out _);
+            uint ours = GetCurrentThreadId();
+            bool attached = fgThread != 0 && fgThread != ours && AttachThreadInput(ours, fgThread, true);
+            try
+            {
+                SetForegroundWindow(hwnd);
+                BringWindowToTop(hwnd);
+            }
+            finally { if (attached) AttachThreadInput(ours, fgThread, false); }
+            Thread.Sleep(300);
+            if (GetForegroundWindow() == hwnd) return true;
+        }
+        return GetForegroundWindow() == hwnd;
     }
 
     private static void Cleanup(Process? dg, Process? sim)
@@ -260,6 +303,16 @@ public class UiCoverageTests
     private static extern bool GetWindowRect(IntPtr hwnd, out RECT rc);
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("dwmapi.dll")]
