@@ -3,21 +3,48 @@ name: Release Drafter
 on:
   push:
     branches: [ master ]
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize]
 
 permissions:
   contents: read
 
 jobs:
-  update_release_draft:
+  # Apply the labels the release notes are grouped by, and that decide the next
+  # version. This has to run on pull_request_target, not pull_request: on a plain
+  # pull_request the ref is refs/pull/<n>/merge, an ephemeral merge commit, and
+  # Release Drafter answers that by forcing dry-run mode - so it labelled nothing
+  # and pull requests reached master unlabelled, landing in the notes without a
+  # category and leaving the version bump to fall back on the default.
+  #
+  # pull_request_target runs in the context of the base branch with a writable
+  # token, which is only safe because nothing here checks out or executes the
+  # pull request's code. Keep it that way.
+  autolabel:
+    if: github.event_name == 'pull_request_target'
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - uses: release-drafter/release-drafter@v7
         with:
           config-name: release-drafter.yml
+          disable-releaser: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Rebuild the draft release notes from the pull requests merged so far.
+  update_release_draft:
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v7
+        with:
+          config-name: release-drafter.yml
+          disable-autolabeler: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
