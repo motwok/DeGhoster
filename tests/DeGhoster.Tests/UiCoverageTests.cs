@@ -253,18 +253,13 @@ public class UiCoverageTests
         throw new DirectoryNotFoundException("build\\ not found above " + AppContext.BaseDirectory);
     }
 
-    private static void EnsureGlobalEnabled()
-    {
-        var psi = new ProcessStartInfo("reg.exe") { UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in new[] { "add", @"HKCU\Software\DeGhoster", "/v", "GlobalEnabled", "/t", "REG_DWORD", "/d", "1", "/f" })
-            psi.ArgumentList.Add(a);
-        Process.Start(psi)?.WaitForExit(5000);
-    }
+    // Writes into the per-run throwaway root, never the user's real settings.
+    private static void EnsureGlobalEnabled() => TestSettings.EnsureGlobalEnabled();
 
     private static Process Start(string exe, string args, string workDir, Dictionary<string, string>? env)
     {
         var psi = new ProcessStartInfo(exe, args) { UseShellExecute = false, WorkingDirectory = workDir };
-        if (env != null) foreach (var kv in env) psi.Environment[kv.Key] = kv.Value;
+        TestSettings.Apply(psi, env);   // throwaway registry root, plus the caller's own entries
         return Process.Start(psi)!;
     }
 

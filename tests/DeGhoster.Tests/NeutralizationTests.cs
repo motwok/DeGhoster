@@ -75,14 +75,8 @@ public class NeutralizationTests
             "Could not locate the build\\ output (with DeGhoster.exe) above " + AppContext.BaseDirectory);
     }
 
-    private static void EnsureGlobalEnabled()
-    {
-        // DeGhoster's master switch defaults to on when absent; force it on so a
-        // previous run/user setting can't disable neutralization for the test.
-        var p = Start("reg.exe",
-            "add \"HKCU\\Software\\DeGhoster\" /v GlobalEnabled /t REG_DWORD /d 1 /f", null, hidden: true);
-        p?.WaitForExit(5000);
-    }
+    // Writes into the per-run throwaway root, never the user's real settings.
+    private static void EnsureGlobalEnabled() => TestSettings.EnsureGlobalEnabled();
 
     private static Process? Start(string exe, string args, string? workDir, bool hidden = false)
     {
@@ -92,6 +86,7 @@ public class NeutralizationTests
             CreateNoWindow = hidden,
             WorkingDirectory = workDir ?? Path.GetDirectoryName(exe) ?? Environment.CurrentDirectory,
         };
+        TestSettings.Apply(psi);   // point it at the throwaway registry root
         return Process.Start(psi);
     }
 
