@@ -46,6 +46,7 @@ endif()
 # both GhostSim64.exe (x64) and GhostSim32.exe (x86) end up in build/.
 if(DEGHOSTER_BUILD_TESTS)
   add_subdirectory(tests/GhostSim)
+  add_subdirectory(tests/CursorSim)
   if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)   # native unit tests: x64 configure only
     add_subdirectory(tests/UnitTests)
   endif()

@@ -3,6 +3,10 @@ add_executable(DeGhosterApp WIN32
   main.cpp
   MainWindow.cpp
   InfoWindow.cpp
+  SettingsWindow.cpp
+  Controls.cpp
+  CursorOverlay.cpp
+  CursorImage.cpp
   GhostEngine.cpp
   HookInjector.cpp
   Settings.cpp
@@ -20,7 +24,8 @@ target_compile_features(DeGhosterApp PRIVATE cxx_std_17)
 target_compile_options(DeGhosterApp PRIVATE "/utf-8")
 # Share the host<->hook message constants.
 target_include_directories(DeGhosterApp PRIVATE "${CMAKE_SOURCE_DIR}/src/DeGhoster.Hook")
-target_link_libraries(DeGhosterApp PRIVATE comctl32 dwmapi shell32 uxtheme gdiplus user32 gdi32)
+target_link_libraries(DeGhosterApp PRIVATE comctl32 dwmapi shell32 uxtheme gdiplus user32 gdi32
+  magnification shcore wtsapi32)
 # Manifest comes from DeGhoster.rc; suppress the linker-generated one.
 target_link_options(DeGhosterApp PRIVATE "/MANIFEST:NO")
 

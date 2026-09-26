@@ -25,4 +25,5 @@ namespace glyph {
     inline constexpr wchar_t Exit[]   = L"\uF3B1";
     inline constexpr wchar_t Eye[]    = L"\uE7B3";
     inline constexpr wchar_t EyeOff[] = L"\uF78D";
+    inline constexpr wchar_t Settings[] = L"\uE713";
 }

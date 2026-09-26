@@ -23,6 +23,7 @@
 #include "Theme.h"
 #include "Settings.h"
 #include "GhostEngine.h"
+#include "CursorOverlay.h"
 
 // Tray app + status window: ghost list with per-window eye toggle, power/info/exit
 // toolbar, tray menu.
@@ -69,11 +70,14 @@ private:
 
     void setGlobalEnabled(bool);
     void toggleWindow(HWND ghost);
+    void setCursorOverlayEnabled(bool);
+    void applyCursorOverlay();   // pushes the settings (and the global switch) to the overlay
+    void showSettings();
 
     int S(int px) const { return MulDiv(px, dpi_, 96); }
 
     HINSTANCE inst_ = nullptr;
-    HWND hwnd_ = nullptr, list_ = nullptr, power_ = nullptr, info_ = nullptr, exit_ = nullptr;
+    HWND hwnd_ = nullptr, list_ = nullptr, power_ = nullptr, info_ = nullptr, exit_ = nullptr, gear_ = nullptr;
     HFONT uiFont_ = nullptr;
     HIMAGELIST rowSizer_ = nullptr;   // 1px-wide image list that forces a taller row height
     NOTIFYICONDATAW nid_{};
@@ -84,6 +88,7 @@ private:
     Theme theme_;
     Settings settings_;
     GhostEngine engine_;
+    CursorOverlay overlay_;
 
     std::vector<HWND> menuWindows_;   // maps per-window menu ids to ghosts
 };

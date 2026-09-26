@@ -17,6 +17,7 @@
 
 #include "MainWindow.h"
 #include "AppInfo.h"
+#include "SettingsWindow.h"
 #include "Glyphs.h"
 #include "Gfx.h"
 #include "HoverButton.h"
@@ -29,12 +30,14 @@
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <windowsx.h>   // GET_X_LPARAM
+#include <wtsapi32.h>
 #include <algorithm>
 #include <string>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "uxtheme.lib")
+#pragma comment(lib, "wtsapi32.lib")
 
 namespace {
 constexpr wchar_t kClass[] = L"DeGhosterMainWindow";
@@ -44,8 +47,8 @@ constexpr UINT WM_TRAY = WM_APP + 0x40;
 constexpr UINT WM_EYE_TOGGLE = WM_APP + 0x41;
 constexpr UINT_PTR kListSubclassId = 1;
 constexpr UINT_PTR kPendingTimer = 1;
-enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT };
-enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_WIN_BASE = 3000 };
+enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT, IDC_SETTINGS };
+enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_SETTINGS, IDM_CURSOR, IDM_WIN_BASE = 3000 };
 
 // Cross-process "show yourself" ping from a second launch. RegisterWindowMessage
 // returns the same value in every process for this string.
@@ -183,6 +186,11 @@ bool MainWindow::create(HINSTANCE inst, bool startHidden)
     // Backstop for cloak/uncloak requests the hook never answers: drop them so a
     // window can't stay stuck in "pending" forever.
     SetTimer(h, kPendingTimer, 1000, nullptr);
+    // The AnyDesk cursor overlay: its own window and WinEvent subscription, and
+    // lock/unlock notifications so the real cursor is restored on the lock screen.
+    overlay_.create(inst);
+    applyCursorOverlay();
+    WTSRegisterSessionNotification(h, NOTIFY_FOR_THIS_SESSION);
     updateStatus();
     // A hook DLL that will not load makes the x64 path a silent no-op: ghosts are
     // listed but never fixed, with nothing to tell the user why. Say so once.
@@ -209,9 +217,11 @@ void MainWindow::onCreate()
     power_ = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_POWER, inst_, nullptr);
     info_  = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_INFO,  inst_, nullptr);
     exit_  = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_EXIT,  inst_, nullptr);
+    gear_  = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_SETTINGS, inst_, nullptr);
     ui::EnableHover(power_);
     ui::EnableHover(info_);
     ui::EnableHover(exit_);
+    ui::EnableHover(gear_);
 
     list_ = CreateWindowExW(0, WC_LISTVIEWW, L"",
                             // LVS_SHAREIMAGELISTS: rowSizer_ belongs to us and is freed in
@@ -267,6 +277,7 @@ void MainWindow::layout()
     MoveWindow(power_, pad, (band - btn) / 2, btn, btn, TRUE);
     MoveWindow(exit_, rc.right - pad - btn, (band - btn) / 2, btn, btn, TRUE);
     MoveWindow(info_, rc.right - pad - 2 * btn - gap, (band - btn) / 2, btn, btn, TRUE);
+    MoveWindow(gear_, rc.right - pad - 3 * btn - 2 * gap, (band - btn) / 2, btn, btn, TRUE);
     MoveWindow(list_, 0, band, rc.right, rc.bottom - band, TRUE);
     sizeListColumns();
 }
@@ -364,6 +375,8 @@ void MainWindow::drawButton(const DRAWITEMSTRUCT* d)
         gfx::DrawGlyph(d->hDC, rc, glyph::Info, hot ? theme_.infoHot : theme_.info, gl);
     } else if (d->CtlID == IDC_EXIT) {
         gfx::DrawGlyph(d->hDC, rc, glyph::Exit, hot ? theme_.exitHot : theme_.exit, gl);
+    } else if (d->CtlID == IDC_SETTINGS) {
+        gfx::DrawGlyph(d->hDC, rc, glyph::Settings, hot ? theme_.settingsHot : theme_.settings, gl);
     }
 }
 
@@ -423,6 +436,26 @@ void MainWindow::setGlobalEnabled(bool on)
     settings_.setGlobalEnabled(on);
     InvalidateRect(power_, nullptr, TRUE);
     engine_.refreshAll();
+    applyCursorOverlay();
+    SettingsWindow::Sync();
+}
+
+void MainWindow::applyCursorOverlay()
+{
+    overlay_.setZoom(settings_.cursorOverlayZoom());
+    overlay_.setEnabled(settings_.globalEnabled() && settings_.cursorOverlayEnabled());
+}
+
+void MainWindow::setCursorOverlayEnabled(bool on)
+{
+    settings_.setCursorOverlayEnabled(on);
+    applyCursorOverlay();
+    SettingsWindow::Sync();
+}
+
+void MainWindow::showSettings()
+{
+    SettingsWindow::Show(inst_, hwnd_, theme_, dpi_, settings_);
 }
 
 void MainWindow::toggleWindow(HWND ghost)
@@ -491,6 +524,11 @@ void MainWindow::showTrayMenu()
         }
     }
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    const bool cursorOn = settings_.cursorOverlayEnabled();
+    AppendMenuW(m, MF_STRING | (cursorOn ? MF_CHECKED : 0) | (on ? 0 : MF_GRAYED), IDM_CURSOR,
+                loc::t(IDS_CURSOR_ENLARGE));
+    AppendMenuW(m, MF_STRING, IDM_SETTINGS, loc::t(IDS_MENU_SETTINGS));
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, IDM_INFO, loc::t(IDS_MENU_INFO));
     AppendMenuW(m, MF_STRING, IDM_QUIT, loc::t(IDS_MENU_QUIT));
 
@@ -502,6 +540,8 @@ void MainWindow::showTrayMenu()
     if (cmd == IDM_SHOW) showWindow();
     else if (cmd == IDM_ACTIVE) setGlobalEnabled(!on);
     else if (cmd == IDM_INFO) InfoWindow::Show(inst_, hwnd_, theme_, dpi_);
+    else if (cmd == IDM_SETTINGS) showSettings();
+    else if (cmd == IDM_CURSOR) setCursorOverlayEnabled(!cursorOn);
     else if (cmd == IDM_QUIT) { reallyExit_ = true; DestroyWindow(hwnd_); }
     else if (cmd >= IDM_WIN_BASE) {
         size_t i = cmd - IDM_WIN_BASE;
@@ -547,6 +587,7 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         switch (LOWORD(wp)) {
         case IDC_POWER: setGlobalEnabled(!settings_.globalEnabled()); return 0;
         case IDC_INFO:  InfoWindow::Show(inst_, hwnd_, theme_, dpi_); return 0;
+        case IDC_SETTINGS: showSettings(); return 0;
         case IDC_EXIT:  reallyExit_ = true; DestroyWindow(hwnd_); return 0;
         }
         return 0;
@@ -557,6 +598,15 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         // because the first up already put up the modal menu.)
         if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == WM_LBUTTONDBLCLK) showWindow();
         else if (LOWORD(lp) == WM_RBUTTONUP) showTrayMenu();
+        return 0;
+
+    case SettingsWindow::WM_SETTINGS_CHANGED: applyCursorOverlay(); return 0;
+
+    case WM_WTSSESSION_CHANGE:
+        // The lock screen runs on the secure desktop where no cursor event reaches
+        // us, so restore the real cursor explicitly instead of relying on timing.
+        if (wp == WTS_SESSION_LOCK) overlay_.setSessionLocked(true);
+        else if (wp == WTS_SESSION_UNLOCK) overlay_.setSessionLocked(false);
         return 0;
 
     case WM_DGH_CLOAKED:   engine_.onCloaked((HWND)wp);   updateStatus(); return 0;
@@ -585,6 +635,7 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         // and the Restart Manager expects the app to close itself. stop() is
         // idempotent, so WM_DESTROY repeating the teardown is harmless.
         if (wp) {
+            overlay_.destroy();
             engine_.stop(700);
             reallyExit_ = true;
             DestroyWindow(hwnd_);
@@ -598,6 +649,8 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_DESTROY:
         KillTimer(hwnd_, kPendingTimer);
+        WTSUnRegisterSessionNotification(hwnd_);
+        overlay_.destroy();   // hides the overlay and gives the real cursor back
         engine_.stop();
         Shell_NotifyIconW(NIM_DELETE, &nid_);
         if (nid_.hIcon) { DestroyIcon(nid_.hIcon); nid_.hIcon = nullptr; }

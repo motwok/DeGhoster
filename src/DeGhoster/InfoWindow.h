@@ -31,6 +31,7 @@ private:
     void layout();
     void applyDpiAssets();   // (re)create the dpi-dependent font and icon
     void paint(HDC);
+    int descExtra() const;   // extra height the description needs (long translations)
 
     HWND hwnd_ = nullptr, link_ = nullptr, licenseLink_ = nullptr, ok_ = nullptr;
     HBRUSH brush_ = nullptr;
@@ -38,6 +39,7 @@ private:
     HFONT uiFont_ = nullptr;   // owned: created in WM_CREATE, freed in WM_DESTROY
     Theme theme_;
     UINT dpi_ = 96;
+    int extra_ = 0;
     int S(int px) const { return MulDiv(px, dpi_, 96); }
 
     static HWND s_active;

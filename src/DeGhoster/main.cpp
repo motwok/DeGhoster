@@ -24,6 +24,7 @@
 #include "Loc.h"
 #include "MainWindow.h"
 #include "InfoWindow.h"
+#include "SettingsWindow.h"
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int)
 {
@@ -96,6 +97,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int)
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
         HWND info = InfoWindow::ActiveHandle();
         if (info && IsDialogMessageW(info, &m)) continue;
+        HWND settings = SettingsWindow::ActiveHandle();
+        if (settings && IsDialogMessageW(settings, &m)) continue;
         TranslateMessage(&m);
         DispatchMessageW(&m);
     }
