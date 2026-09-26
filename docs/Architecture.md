@@ -223,6 +223,11 @@ sequenceDiagram
   WS_EX_TOOLWINDOW`, class `DeGhosterCursorOverlay`; `WM_NCHITTEST` answers
   `HTTRANSPARENT` and `WM_MOUSEACTIVATE` `MA_NOACTIVATE`. Every move re-asserts
   `HWND_TOPMOST`, so the taskbar cannot clip it.
+- **Hidden cursor.** A cursor AnyDesk sets while the real one is hidden can get
+  drawn once and stay frozen on screen (seen with a Mac remote's resize cursors)
+  until a click refreshes it. After every new shape the overlay therefore calls
+  `MagShowSystemCursor(TRUE)` and `FALSE` back to back, which makes Windows drop the
+  stale image without a visible flicker.
 - **Lifecycle.** `MainWindow` pushes `globalEnabled && cursorOverlayEnabled` and the
   zoom after every change; `WTS_SESSION_LOCK` hides the overlay and restores the
   cursor, `WTS_SESSION_UNLOCK` leaves it to the next cursor event. `WM_ENDSESSION` and

@@ -171,10 +171,19 @@ void CursorOverlay::evaluate(bool shapeChanged)
     if (!root || !GetClassNameW(root, cls, ARRAYSIZE(cls)) || !IsAnyDeskClass(cls)) { hide(); return; }
 
     const UINT dpi = DpiAt(pt);
-    if (shapeChanged || ci.hCursor != shownCursor_ || zoom_ != shownZoom_ || dpi != shownDpi_) {
+    const bool newShape = shapeChanged || ci.hCursor != shownCursor_;
+    if (newShape || zoom_ != shownZoom_ || dpi != shownDpi_) {
         if (!render(ci.hCursor, dpi)) { hide(); return; }
     }
     place(pt);
+    // A cursor AnyDesk sets while the real one is hidden can get drawn once and
+    // then stay frozen on screen (seen with the remote's resize cursors), until
+    // something like a click refreshes it. Showing and hiding it again after
+    // every new shape makes Windows drop that stale image.
+    if (newShape && cursorHidden_) {
+        MagShowSystemCursor(TRUE);
+        MagShowSystemCursor(FALSE);
+    }
 }
 
 bool CursorOverlay::render(HCURSOR cursor, UINT dpi)
