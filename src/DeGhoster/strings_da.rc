@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Tip: en større musemarkør på fjerncomputeren giver en skarpere markør."
     IDS_SETTINGS_CLOSE   "Luk"
+    IDS_SETTINGS_AUTO    "Automatisk størrelse (så stor som den lokale markør)"
 END

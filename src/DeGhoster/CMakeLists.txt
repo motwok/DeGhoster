@@ -7,6 +7,7 @@ add_executable(DeGhosterApp WIN32
   Controls.cpp
   CursorOverlay.cpp
   CursorImage.cpp
+  AutoZoom.cpp
   GhostEngine.cpp
   HookInjector.cpp
   Settings.cpp

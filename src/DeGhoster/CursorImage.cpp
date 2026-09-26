@@ -166,6 +166,32 @@ Image Scale(const Image& src, int zoomPercent)
     return out;
 }
 
+int VisibleHeight(const Image& img)
+{
+    int top = -1, bottom = -1;
+    for (int y = 0; y < img.h; ++y)
+        for (int x = 0; x < img.w; ++x)
+            if (img.at(x, y) >> 24) {
+                if (top < 0) top = y;
+                bottom = y;
+                break;
+            }
+    return top < 0 ? 0 : bottom - top + 1;
+}
+
+uint64_t Key(const Image& img)
+{
+    // FNV-1a over the geometry and the pixels.
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&h](uint32_t v) {
+        for (int i = 0; i < 4; ++i) { h ^= (v >> (8 * i)) & 0xFF; h *= 1099511628211ull; }
+    };
+    mix((uint32_t)img.w); mix((uint32_t)img.h);
+    mix((uint32_t)img.hot.x); mix((uint32_t)img.hot.y);
+    for (uint32_t c : img.px) mix(c);
+    return h;
+}
+
 bool Read(HCURSOR cursor, UINT dpi, Image& out)
 {
     ICONINFO ii{};

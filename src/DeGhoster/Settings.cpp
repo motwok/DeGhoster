@@ -60,6 +60,7 @@ int Settings::ZoomForDpi(unsigned dpi)
 void Settings::load()
 {
     globalEnabled_ = true;   // reset to defaults so a reload replaces, not merges
+    cursorOverlayAuto_ = true;
     disabled_.clear();
 
     bool haveZoom = false;
@@ -68,6 +69,9 @@ void Settings::load()
         DWORD v = 1, sz = sizeof(v);
         if (RegQueryValueExW(k, L"GlobalEnabled", nullptr, nullptr, (LPBYTE)&v, &sz) == ERROR_SUCCESS)
             globalEnabled_ = v != 0;
+        sz = sizeof(v);
+        if (RegQueryValueExW(k, L"CursorOverlayAuto", nullptr, nullptr, (LPBYTE)&v, &sz) == ERROR_SUCCESS)
+            cursorOverlayAuto_ = v != 0;
         sz = sizeof(v);
         if (RegQueryValueExW(k, L"CursorOverlayZoom", nullptr, nullptr, (LPBYTE)&v, &sz) == ERROR_SUCCESS) {
             cursorOverlayZoom_ = ClampZoom((int)v);
@@ -104,6 +108,12 @@ void Settings::setGlobalEnabled(bool on)
 {
     globalEnabled_ = on;
     writeDword(L"GlobalEnabled", on ? 1 : 0);
+}
+
+void Settings::setCursorOverlayAuto(bool on)
+{
+    cursorOverlayAuto_ = on;
+    writeDword(L"CursorOverlayAuto", on ? 1 : 0);
 }
 
 void Settings::setCursorOverlayZoom(int percent)

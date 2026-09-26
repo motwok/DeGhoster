@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "זום"
     IDS_SETTINGS_HINT    "טיפ: הגדלת מצביע העכבר במחשב המרוחק נותנת סמן חד יותר."
     IDS_SETTINGS_CLOSE   "סגירה"
+    IDS_SETTINGS_AUTO    "גודל אוטומטי (בגודל המצביע המקומי)"
 END

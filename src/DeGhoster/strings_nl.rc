@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Tip: een grotere muisaanwijzer op de externe computer geeft een scherpere cursor."
     IDS_SETTINGS_CLOSE   "Sluiten"
+    IDS_SETTINGS_AUTO    "Automatische grootte (zo groot als de lokale aanwijzer)"
 END

@@ -75,8 +75,9 @@ Both artifacts are produced by [`build.ps1`](build.ps1) into `dist\` — see
   running.
 - **Per-window on/off:** the eye on each row (green = managed, grey = ignored).
 - **AnyDesk cursor:** every AnyDesk window is listed with its own eye like a ghost
-  window (on by default); the zoom (100–600 %) is in the **Settings** window (gear
-  button or tray menu).
+  window (on by default). The size is automatic — as large as your own pointer, per
+  window; a fixed zoom (100–600 %) is in the **Settings** window (gear button or tray
+  menu).
 
 The full guide is in the [User Manual](docs/UserManual.md).
 

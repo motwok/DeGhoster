@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Powiększenie"
     IDS_SETTINGS_HINT    "Wskazówka: większy wskaźnik myszy na komputerze zdalnym daje ostrzejszy kursor."
     IDS_SETTINGS_CLOSE   "Zamknij"
+    IDS_SETTINGS_AUTO    "Rozmiar automatyczny (jak lokalny wskaźnik)"
 END

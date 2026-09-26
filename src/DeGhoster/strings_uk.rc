@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Масштаб"
     IDS_SETTINGS_HINT    "Порада: більший вказівник миші на віддаленому комп’ютері дає чіткіший курсор."
     IDS_SETTINGS_CLOSE   "Закрити"
+    IDS_SETTINGS_AUTO    "Автоматичний розмір (як у локального вказівника)"
 END

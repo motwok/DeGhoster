@@ -56,6 +56,13 @@ int OutlineRadius(UINT dpi);
 // The hotspot is scaled the same way.
 Image Scale(const Image& src, int zoomPercent);
 
+// Height of the visible part (rows with any non-transparent pixel), 0 if none.
+int VisibleHeight(const Image& img);
+
+// A fingerprint of the picture (size, hotspot, pixels). Cursor handles cannot
+// tell shapes apart: AnyDesk destroys cursors and gets the same handle back.
+uint64_t Key(const Image& img);
+
 // Reads a live cursor (any process's: cursor handles are valid system-wide),
 // including the outline for inverting pixels. False if it has no usable image.
 bool Read(HCURSOR cursor, UINT dpi, Image& out);

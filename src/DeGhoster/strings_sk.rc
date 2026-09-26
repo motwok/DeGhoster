@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zväčšenie"
     IDS_SETTINGS_HINT    "Tip: väčší ukazovateľ myši na vzdialenom počítači dáva ostrejší kurzor."
     IDS_SETTINGS_CLOSE   "Zavrieť"
+    IDS_SETTINGS_AUTO    "Automatická veľkosť (ako miestny ukazovateľ)"
 END

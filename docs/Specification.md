@@ -250,15 +250,28 @@ pixels are read as top-down 32-bit BGRA with `GetDIBits`:
   inverting pixel becomes opaque white. Without it an inverting I-beam is invisible
   on dark backgrounds.
 
-**Zoom.** One factor *z* set by the user (10.6) applies to every remote cursor alike.
-Range 100 … 600 %, step 10 %; the initial value is the primary monitor's scaling,
-clamped to the range. Output size = round(source × *z*), hotspot = round(hotspot ×
+**Zoom — Auto (default).** Per AnyDesk window, DeGhoster measures how long each
+remote cursor picture is on screen (told apart by its pixels, not its handle; one
+interval counts at most 2 s, so a mouse resting on one shape does not outweigh
+real use). The picture shown the longest is the reference — in practice the normal
+arrow — and *z* makes its visible height equal to the local arrow's: the visible
+rows of the system arrow's picture × DPI/96. Another picture takes over the reference
+only once it has been shown 1.5 times as long. *z* is clamped to 100 … 600 % on the
+10 % grid. Until a window has shown a visible cursor, the fixed zoom applies. Each
+window has its own *z*, so a Mac and a Windows remote get their own factor. Nothing
+of this is stored. No shape recognition is involved (see
+[ADR-0012](adr/0012-anydesk-cursor-overlay.md)).
+
+**Zoom — fixed.** With Auto off, one factor *z* set by the user (10.6) applies to
+every remote cursor alike. Range 100 … 600 %, step 10 %; the initial value is the
+primary monitor's scaling, clamped to the range. Output size = round(source × *z*), hotspot = round(hotspot ×
 *z*). Resampling is **sharp bilinear**: nearest neighbour by *k* = max(1, ⌊*z*⌋),
 then bilinear to the exact size, with clamped edges (no dark seams). The overlay is
 re-rendered only when the cursor handle, *z* or the monitor DPI changes; otherwise it
-is only moved. Accepted effects of a single factor: AnyDesk shrinks cursors by a
+is only moved. Accepted effects of the fixed factor: AnyDesk shrinks cursors by a
 session-dependent amount (a Mac remote needs about twice the factor of a Windows
-remote), and a larger pointer on the remote gives a larger and sharper source.
+remote), which Auto takes care of per window; and a larger pointer on the remote
+gives a larger and sharper source.
 
 **Overlay window.** Borderless popup with `WS_EX_LAYERED | WS_EX_TRANSPARENT |
 WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`: never activated, no taskbar
@@ -301,8 +314,8 @@ button in the status window. Single instance (opening it again brings it to the
 front); same owner-drawn look as the status and About windows (light/dark,
 `DEGHOSTER_FORCE_THEME`), per-monitor DPI, RTL layout for RTL languages. Changes
 apply and are saved immediately; **Close**, `Esc` and the caption close button close
-it; `Tab`/`Shift+Tab` move through the controls with a visible focus indicator.
-`--quit` and end-session close it without prompts. It is built in sections so
+it; `Tab`/`Shift+Tab` move through the controls with a visible focus indicator;
+`Space` toggles a switch. `--quit` and end-session close it without prompts. It is built in sections so
 further settings can be added later. It holds no on/off switch for a case: those are
 the per-window eyes and the global power button.
 
@@ -310,10 +323,11 @@ Section **AnyDesk cursor**:
 
 | Control | Behaviour |
 |---|---|
-| **Zoom** slider with value label ("250 %") | 100 … 600 %, step 10 %; arrows ±10 %, PgUp/PgDn ±50 %, Home/End = limits; applies live. |
+| **Automatic size (as large as the local pointer)** (on/off switch, on by default) | Auto zoom per AnyDesk window (10.4). |
+| **Zoom** slider with value label ("250 %") | The fixed zoom: 100 … 600 %, step 10 %; arrows ±10 %, PgUp/PgDn ±50 %, Home/End = limits; applies live; greyed out while Auto is on. |
 | Hint | Enlarging the pointer on the remote computer gives a sharper cursor. |
 
-While the global switch is off, the slider is greyed out.
+While the global switch is off, the whole section is greyed out.
 
 ### 10.7 Persistence
 
@@ -321,7 +335,8 @@ Under `HKCU\Software\DeGhoster` (honouring `DEGHOSTER_SETTINGS_ROOT`):
 
 | Value | Type | Meaning | Default |
 |---|---|---|---|
-| `CursorOverlayZoom` | DWORD | zoom in percent, 100 … 600 | primary monitor scaling |
+| `CursorOverlayAuto` | DWORD | automatic zoom 0/1 | 1 |
+| `CursorOverlayZoom` | DWORD | fixed zoom in percent, 100 … 600 | primary monitor scaling |
 
 Switched-off AnyDesk windows are stored like switched-off ghosts, under `Disabled`.
 
@@ -330,8 +345,8 @@ schemes, no `SetSystemCursor`.
 
 ### 10.8 Acceptance criteria
 
-1. With a suitable zoom, the remote arrow at 250 % appears as large as the local
-   cursor, for a Windows and a macOS remote.
+1. With Auto, the remote arrow at 250 % appears as large as the local cursor, for a
+   Windows and a macOS remote at the same time, without any setting.
 2. Shape changes are visible without noticeable delay.
 3. No click, drag or text-field focus behaves differently with a window on vs. off.
 4. The overlay never appears over AnyDesk's own UI, outside AnyDesk or over an

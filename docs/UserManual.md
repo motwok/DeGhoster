@@ -127,21 +127,31 @@ ghost window, and it is **on** by default. Click the eye (or the window's entry 
 menu) to switch the enlarged cursor off for that one AnyDesk window; the choice is
 remembered per remote computer. With several AnyDesk windows open, each has its own entry.
 
-To set the size, open **Settings** — the **gear** button in the status window's toolbar, or
-**Settings…** in the tray menu:
+**The size is automatic.** DeGhoster watches which remote cursor is on screen the longest —
+normally the arrow — and makes it exactly as tall as your own mouse pointer. It does that
+for each AnyDesk window separately, so a Mac and a Windows computer both look right at the
+same time, without any setting. It needs a few seconds of normal use in a new session to
+settle.
 
-- **Zoom** sets how much the remote cursor is enlarged, from 100 % to 600 %. It starts at your
-  display scaling (250 % at 250 %). Changes apply at once: rest the mouse over an AnyDesk
-  session, then adjust the slider with the keyboard (arrow keys ±10 %, Page Up/Page Down
-  ±50 %, Home/End for the limits) and watch the cursor grow or shrink.
+To use a fixed size instead, open **Settings** — the **gear** button in the status window's
+toolbar, or **Settings…** in the tray menu:
+
+- **Automatic size (as large as the local pointer)** — on by default. Switch it off to use
+  the fixed zoom below.
+- **Zoom** sets the fixed size, from 100 % to 600 %. It starts at your display scaling
+  (250 % at 250 %) and is greyed out while the automatic size is on. Changes apply at once:
+  rest the mouse over an AnyDesk session, then adjust the slider with the keyboard (arrow
+  keys ±10 %, Page Up/Page Down ±50 %, Home/End for the limits) and watch the cursor grow or
+  shrink.
 
 Everything is saved immediately; **Close** or **Esc** closes the window.
 
 **Tips for the right size**
 
-- The right zoom depends on the remote computer, because AnyDesk shrinks cursors by a
-  different amount per session. A **Mac** remote typically needs about **twice** the zoom of a
-  **Windows** remote (roughly 500 % vs. 250 % at a 250 % display scaling).
+- With a fixed size, the right zoom depends on the remote computer, because AnyDesk shrinks
+  cursors by a different amount per session. A **Mac** remote typically needs about **twice**
+  the zoom of a **Windows** remote (roughly 500 % vs. 250 % at a 250 % display scaling). The
+  automatic size takes care of that by itself.
 - For the **sharpest** result, make the mouse pointer larger **on the remote computer**
   (Windows: *Settings → Accessibility → Mouse pointer*; macOS: *Accessibility → Display →
   Pointer size*) and use a smaller zoom here. The enlarged cursor is a magnified picture, so a
@@ -168,8 +178,8 @@ restored to normal automatically.
 
 ## It remembers your choices
 
-Any window you switch off, whether DeGhoster is paused, and your AnyDesk cursor zoom are
-remembered between restarts. When you start DeGhoster again, it picks up right where you left
+Any window you switch off, whether DeGhoster is paused, and your AnyDesk cursor size settings
+are remembered between restarts. When you start DeGhoster again, it picks up right where you left
 off.
 
 ## Troubleshooting
@@ -187,8 +197,9 @@ off.
 - **The AnyDesk cursor is still tiny.** Make sure DeGhoster is active (green power button) and
   the AnyDesk window's eye in the status window is open (green). The enlarged cursor only
   appears over the remote screen, not over AnyDesk's own tabs and menus.
-- **The AnyDesk cursor is too big or too small.** Adjust **Zoom** in the settings window. A
-  Mac and a Windows remote usually need different values (see the tips above).
+- **The AnyDesk cursor is too big or too small.** With the automatic size, move the mouse
+  around normally for a few seconds; it settles on the shape you see most. If you prefer a
+  fixed size, switch **Automatic size** off in the settings window and adjust **Zoom**.
 - **The AnyDesk cursor looks blurry.** Enlarge the mouse pointer on the remote computer and
   lower the zoom here.
 - **The menus are in the wrong language.** DeGhoster follows your **Windows display language**.

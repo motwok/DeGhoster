@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "拡大率"
     IDS_SETTINGS_HINT    "ヒント: リモート コンピューターのマウス ポインターを大きくすると、カーソルがよりくっきり表示されます。"
     IDS_SETTINGS_CLOSE   "閉じる"
+    IDS_SETTINGS_AUTO    "自動サイズ (ローカルのポインターと同じ大きさ)"
 END

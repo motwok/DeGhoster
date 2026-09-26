@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Nagyítás"
     IDS_SETTINGS_HINT    "Tipp: a távoli számítógépen beállított nagyobb egérmutató élesebb kurzort ad."
     IDS_SETTINGS_CLOSE   "Bezárás"
+    IDS_SETTINGS_AUTO    "Automatikus méret (akkora, mint a helyi mutató)"
 END

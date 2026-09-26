@@ -33,6 +33,11 @@ public:
     bool isManaged(const std::wstring& key) const;
     void setManaged(const std::wstring& key, bool managed);
 
+    // Automatic zoom per AnyDesk window (default on); the fixed zoom below applies
+    // when it is off.
+    bool cursorOverlayAuto() const { return cursorOverlayAuto_; }
+    void setCursorOverlayAuto(bool);
+
     // Zoom in percent, always within [kZoomMin, kZoomMax] on a kZoomStep grid.
     int cursorOverlayZoom() const { return cursorOverlayZoom_; }
     void setCursorOverlayZoom(int percent);
@@ -44,6 +49,7 @@ public:
 
 private:
     bool globalEnabled_ = true;
+    bool cursorOverlayAuto_ = true;
     int cursorOverlayZoom_ = kZoomMin;
     std::unordered_set<std::wstring> disabled_;
 };

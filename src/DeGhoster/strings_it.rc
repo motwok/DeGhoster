@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Suggerimento: ingrandire il puntatore del mouse sul computer remoto dà un cursore più nitido."
     IDS_SETTINGS_CLOSE   "Chiudi"
+    IDS_SETTINGS_AUTO    "Dimensione automatica (grande come il puntatore locale)"
 END

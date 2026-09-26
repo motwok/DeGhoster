@@ -73,9 +73,10 @@ with no shared mutable state beyond the win-event thunk's single-instance pointe
 | `MainWindow` | tray app and status window: toolbar, list, tray menu; owns theme/settings/engine/overlay, implements `GhostEngine::Listener`, forwards the zoom, the global switch, per-window changes and session lock/unlock to the overlay and gives it the per-window filter |
 | `InfoWindow` | dark-mode "About" popup (modeless, single-instance) |
 | `SettingsWindow` | settings window (modeless, single-instance), built in sections; applies and saves every change at once and tells the owner with `WM_SETTINGS_CHANGED` |
-| `Controls` | owner-drawn slider used by the settings window |
+| `Controls` | owner-drawn on/off switch and slider used by the settings window |
+| `AutoZoom` | automatic zoom of one AnyDesk window: on-screen time per cursor picture, reference picture, zoom |
 | `CursorOverlay` | AnyDesk cursor overlay: `OBJID_CURSOR` WinEvents, activation check (asks the per-window filter), overlay window, `MagShowSystemCursor` |
-| `CursorImage` | cursor handle → premultiplied ARGB + hotspot (all three cursor kinds), outline for inverting pixels, sharp-bilinear scaling |
+| `CursorImage` | cursor handle → premultiplied ARGB + hotspot (all three cursor kinds), outline for inverting pixels, sharp-bilinear scaling, visible height and picture fingerprint |
 | `GhostEngine` | detection + cloak + reconcile core for every case (ghosts and AnyDesk windows), driven by `SetWinEventHook` |
 | `HookInjector` | starts a helper of the target's bitness per target thread and tracks its lifetime |
 | `Autostart` | per-user HKCU `Run` register/unregister (installer hooks) |
@@ -241,12 +242,21 @@ sequenceDiagram
   until a click refreshes it. After every new shape the overlay therefore calls
   `MagShowSystemCursor(TRUE)` and `FALSE` back to back, which makes Windows drop the
   stale image without a visible flicker.
+- **Auto zoom.** The picture of the current cursor is read once per shape
+  (`CursorImage::Read`) and fingerprinted (`Key`, since handles get reused). With
+  Auto on, every event credits the time since the previous one (at most 2 s) to the
+  picture shown until then, in an `AutoZoom` per AnyDesk root window. The reference
+  is the picture with the most time (with a 1.5× hysteresis); the zoom is the local
+  arrow's height — the visible rows of `LoadCursor(IDC_ARROW)`'s picture × DPI/96,
+  cached per DPI — divided by the reference's visible height. A zoom change re-renders
+  the current picture from the cached source. `AutoZoom` entries of closed windows
+  are dropped when a new window is added.
 - **Per window.** Each AnyDesk window is a tracked case with its own eye. The overlay
   gets a filter from `MainWindow` that looks the root window up with
   `GhostEngine::trackAnyDesk` and checks its opt-out key; toggling an eye calls
   `CursorOverlay::refresh()`, so a window switched off under the cursor loses the
   overlay at once.
-- **Lifecycle.** `MainWindow` pushes `globalEnabled` and the zoom after every change; `WTS_SESSION_LOCK` hides the overlay and restores the
+- **Lifecycle.** `MainWindow` pushes `globalEnabled`, Auto and the fixed zoom after every change; `WTS_SESSION_LOCK` hides the overlay and restores the
   cursor, `WTS_SESSION_UNLOCK` leaves it to the next cursor event. `WM_ENDSESSION` and
   `WM_DESTROY` destroy the overlay, which restores the cursor and calls
   `MagUninitialize`. A killed process gets its cursor back from Windows.
@@ -276,7 +286,8 @@ the stable key part).
 |---|---|---|
 | `GlobalEnabled` | DWORD | master switch |
 | `Disabled\<ExePath>\|<Title>` | String | one value per disabled window |
-| `CursorOverlayZoom` | DWORD | overlay zoom in percent, 100 … 600 on a 10 % grid; written on first start from the primary monitor's scaling |
+| `CursorOverlayAuto` | DWORD | automatic zoom per AnyDesk window (default 1) |
+| `CursorOverlayZoom` | DWORD | fixed overlay zoom in percent, 100 … 600 on a 10 % grid; written on first start from the primary monitor's scaling |
 
 The per-user autostart entry (`...\CurrentVersion\Run\DeGhoster`) is managed by the
 installer / the `Autostart` module, see [ADR-0007](adr/0007-per-user-autostart.md).
@@ -293,9 +304,10 @@ installer / the `Autostart` module, see [ADR-0007](adr/0007-per-user-autostart.m
   (Win 10 look on Win 10, Win 11 on Win 11) via comctl32 v6 theming and DWM.
 - The settings window measures its text and grows with long translations (up to the
   monitor's work area) and re-measures on `WM_DPICHANGED`. Its controls
-  (`Controls.cpp`) are custom window classes: the slider draws a track, a thumb and
-  a value label. It is keyboard operable (`WM_GETDLGCODE`, driven by
-  `IsDialogMessage` in the main loop), greys out when disabled and show a focus rectangle following the keyboard cues
+  (`Controls.cpp`) are custom window classes: the switch is a pill with a knob plus
+  its label, the slider a track, a thumb and a value label. Both are keyboard
+  operable (`WM_GETDLGCODE`, driven by `IsDialogMessage` in the main loop), grey out
+  when disabled and show a focus rectangle following the keyboard cues
   (`UISF_HIDEFOCUS`).
 
 ## Localization internals ([ADR-0006](adr/0006-mui-localization.md))
@@ -307,8 +319,8 @@ neutral module. `cmake/Languages.cmake` (`<culture>=<LANGID>=<rc>`) is the singl
 source of truth; `strings_<lang>.rc` holds the translations. RTL (ar/he):
 `Loc::isRtl()` reads `LOCALE_IREADINGLAYOUT` of the resolved UI language, windows use
 `WS_EX_LAYOUTRTL`, and owner-drawn glyphs are kept upright via `SetLayout(hdc, 0)`.
-GDI+ ignores a mirrored DC, so the slider keeps its geometry and
-mouse positions in logical (mirrored) coordinates but paints after `SetLayout(hdc, 0)`
+GDI+ ignores a mirrored DC, so the switch and the slider keep their geometry and
+mouse positions in logical (mirrored) coordinates but paint after `SetLayout(hdc, 0)`
 with every rectangle mirrored by hand; under RTL the arrow keys follow the visual
 direction.
 Brand strings (app name, tagline, "Buy Me a Coffee", "OK", copyright) stay English

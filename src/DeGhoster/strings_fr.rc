@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Astuce : agrandir le pointeur de la souris sur l'ordinateur distant donne un curseur plus net."
     IDS_SETTINGS_CLOSE   "Fermer"
+    IDS_SETTINGS_AUTO    "Taille automatique (aussi grand que le pointeur local)"
 END

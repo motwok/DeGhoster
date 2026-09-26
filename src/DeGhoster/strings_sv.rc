@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Tips: en större muspekare på fjärrdatorn ger en skarpare pekare."
     IDS_SETTINGS_CLOSE   "Stäng"
+    IDS_SETTINGS_AUTO    "Automatisk storlek (lika stor som den lokala pekaren)"
 END

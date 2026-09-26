@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Tips: en større musepeker på den eksterne datamaskinen gir en skarpere peker."
     IDS_SETTINGS_CLOSE   "Lukk"
+    IDS_SETTINGS_AUTO    "Automatisk størrelse (like stor som den lokale pekeren)"
 END

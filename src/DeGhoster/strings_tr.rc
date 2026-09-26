@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Yakınlaştırma"
     IDS_SETTINGS_HINT    "İpucu: uzak bilgisayarda fare işaretçisini büyütmek daha net bir imleç sağlar."
     IDS_SETTINGS_CLOSE   "Kapat"
+    IDS_SETTINGS_AUTO    "Otomatik boyut (yerel işaretçi kadar büyük)"
 END

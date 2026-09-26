@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Dica: aumentar o ponteiro do rato no computador remoto dá um cursor mais nítido."
     IDS_SETTINGS_CLOSE   "Fechar"
+    IDS_SETTINGS_AUTO    "Tamanho automático (do tamanho do ponteiro local)"
 END

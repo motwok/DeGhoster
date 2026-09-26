@@ -13,6 +13,7 @@
 #include "ProcessUtil.h"
 #include "HookInjector.h"
 #include "CursorImage.h"
+#include "AutoZoom.h"
 #include "CursorOverlay.h"
 #include "Controls.h"
 #include "SettingsWindow.h"
@@ -121,6 +122,40 @@ static void ZoomTests()
     Check(Settings::ZoomForDpi(960) == 600, "ZoomForDpi(960) is clamped to 600");
 }
 
+static void AutoZoomTests()
+{
+    std::printf("AutoZoom tests\n");
+    AutoZoom az;
+    Check(az.zoom(40) == 0, "nothing seen: no automatic zoom");
+
+    // Arrow 16 px tall, I-beam 20 px; the local arrow is 40 px.
+    const uint64_t arrow = 1, ibeam = 2;
+    ULONGLONG t = 1000;
+    az.observe(arrow, 16, t);
+    Check(az.reference() == arrow && az.zoom(40) == 250, "the first picture is the reference: 40/16 = 250 %");
+    az.observe(ibeam, 20, t += 500);            // arrow 500 ms
+    az.observe(arrow, 16, t += 300);            // I-beam 300 ms
+    Check(az.reference() == arrow, "a picture shown less long does not take over");
+    az.observe(ibeam, 20, t += 100000);         // arrow resting: credited 2000 ms only
+    az.observe(arrow, 16, t += 1500);           // I-beam 1800 ms in total
+    Check(az.reference() == arrow, "resting time is capped, so the arrow keeps the lead");
+    for (int i = 0; i < 5; ++i) {               // then lots of text editing
+        az.observe(ibeam, 20, t += 100);
+        az.observe(arrow, 16, t += 2000);
+    }
+    Check(az.reference() == ibeam && az.zoom(40) == 200, "a picture shown clearly longer takes over: 40/20 = 200 %");
+    Check(az.zoom(0) == 0, "no target height: no automatic zoom");
+
+    AutoZoom tiny;
+    tiny.observe(7, 2, 0);
+    Check(tiny.zoom(40) == Settings::kZoomMax, "the automatic zoom is clamped to the maximum");
+    AutoZoom empty;
+    empty.observe(8, 0, 0);
+    Check(empty.zoom(40) == 0, "a picture with nothing visible cannot be the reference");
+    empty.observe(9, 40, 10);
+    Check(empty.reference() == 9 && empty.zoom(40) == 100, "the next visible picture becomes the reference");
+}
+
 static void AnyDeskClassTests()
 {
     std::printf("AnyDesk class tests\n");
@@ -217,6 +252,18 @@ static void CursorImageTests()
     Check(OutlineRadius(192) == 2 && OutlineRadius(240) == 2 && OutlineRadius(480) == 4,
           "outline radius grows with the DPI");
     Check(OutlineRadius(0) == 1, "outline radius is never below 1");
+
+    {   // visible height and fingerprint
+        Image img; img.w = 2; img.h = 5; img.px.assign(10, 0);
+        Check(VisibleHeight(img) == 0, "an empty picture has no visible height");
+        img.px[1 * 2] = 0xFF000000u; img.px[3 * 2 + 1] = 0x80000000u;
+        Check(VisibleHeight(img) == 3, "visible height spans the first to the last visible row");
+        Image same = img, other = img;
+        other.px[1 * 2] = 0xFF010101u;
+        Check(Key(img) == Key(same) && Key(img) != Key(other), "equal pictures share a key, different ones do not");
+        other = img; other.hot.x = 1;
+        Check(Key(img) != Key(other), "the hotspot is part of the key");
+    }
 
     {   // integer zoom is exact nearest neighbour: one pixel -> a 5x5 block
         Image img; img.w = 1; img.h = 1; img.px = { 0xFF102030u };
@@ -348,11 +395,35 @@ static void ControlTests()
 
     for (int rtl = 0; rtl < 2; ++rtl) {
         HWND parent = MakeParent(rtl != 0);
+        HWND tg = CreateWindowExW(0, ui::kToggleClass, L"Switch", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                                  10, 10, 300, 32, parent, (HMENU)(UINT_PTR)7, inst, nullptr);
         HWND sl = CreateWindowExW(0, ui::kSliderClass, L"Zoom", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                                   10, 50, 400, 32, parent, (HMENU)(UINT_PTR)8, inst, nullptr);
+        SendMessageW(tg, ui::CTL_SETTHEME, 0, (LPARAM)&theme);
         SendMessageW(sl, ui::CTL_SETTHEME, 0, (LPARAM)&theme);
+        SendMessageW(tg, WM_SETFONT, (WPARAM)font, TRUE);
         SendMessageW(sl, WM_SETFONT, (WPARAM)font, TRUE);
-        Check((HFONT)SendMessageW(sl, WM_GETFONT, 0, 0) == font, "the slider keeps its font");
+        Check((HFONT)SendMessageW(tg, WM_GETFONT, 0, 0) == font, "controls keep their font");
+
+        // Toggle
+        g_commands = 0;
+        Check(SendMessageW(tg, BM_GETCHECK, 0, 0) == BST_UNCHECKED, "toggle starts unchecked");
+        SendMessageW(tg, BM_SETCHECK, BST_CHECKED, 0);
+        Check(SendMessageW(tg, BM_GETCHECK, 0, 0) == BST_CHECKED && g_commands == 0,
+              "BM_SETCHECK sets the state without notifying");
+        Key(tg, VK_SPACE);
+        Check(SendMessageW(tg, BM_GETCHECK, 0, 0) == BST_UNCHECKED && g_commands == 1,
+              "Space flips the toggle and notifies the parent");
+        Check(SendMessageW(tg, WM_GETDLGCODE, 0, 0) == DLGC_WANTCHARS, "toggle wants chars");
+        SendMessageW(tg, WM_CHAR, L' ', 0);
+        Key(tg, VK_RETURN);   // ignored
+        SendMessageW(tg, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(20, 16));
+        SendMessageW(tg, WM_LBUTTONUP, 0, MAKELPARAM(20, 16));
+        Check(SendMessageW(tg, BM_GETCHECK, 0, 0) == BST_CHECKED && g_commands == 2,
+              "a click flips the toggle");
+        SendMessageW(tg, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(20, 16));
+        SendMessageW(tg, WM_LBUTTONUP, 0, MAKELPARAM(900, 16));
+        Check(g_commands == 2, "releasing outside the toggle does not flip it");
 
         g_scrolls = 0;
         SendMessageW(sl, ui::SLM_SETRANGE, 100, 600);
@@ -392,14 +463,19 @@ static void ControlTests()
         Check(Pos(sl) == 100, "moving without the button does nothing");
         SendMessageW(sl, WM_CAPTURECHANGED, 0, 0);
 
-        // Paint in every state: focused, disabled.
+        // Paint in every state: focused, disabled, checked and unchecked.
+        SetFocus(tg);
+        SendMessageW(tg, WM_UPDATEUISTATE, MAKEWPARAM(UIS_CLEAR, UISF_HIDEFOCUS), 0);
+        UpdateWindow(tg);
         SetFocus(sl);
         SendMessageW(sl, WM_UPDATEUISTATE, MAKEWPARAM(UIS_CLEAR, UISF_HIDEFOCUS), 0);
         UpdateWindow(sl);
+        EnableWindow(tg, FALSE);
         EnableWindow(sl, FALSE);
-        SetWindowTextW(sl, L"Zoom (off)");
+        SendMessageW(tg, BM_SETCHECK, BST_UNCHECKED, 0);
+        SetWindowTextW(tg, L"Switch (off)");
         RedrawWindow(parent, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
-        Check(SendMessageW(sl, WM_ERASEBKGND, 0, 0) == 1, "the slider skips background erasing");
+        Check(SendMessageW(tg, WM_ERASEBKGND, 0, 0) == 1, "controls skip background erasing");
         Pump();
 
         DestroyWindow(parent);
@@ -428,24 +504,33 @@ static void SettingsWindowTests()
     Check(SettingsWindow::ActiveHandle() == w, "a second Show reuses the open window");
     Pump();
 
+    HWND autoSw = GetDlgItem(w, SettingsWindow::IDC_CURSOR_AUTO);
     HWND zoom = GetDlgItem(w, SettingsWindow::IDC_CURSOR_ZOOM);
     HWND close = GetDlgItem(w, SettingsWindow::IDC_CLOSE);
-    Check(zoom && close, "the section has a slider and a Close button");
-    Check(Pos(zoom) == 250, "the slider shows the stored zoom");
+    Check(autoSw && zoom && close, "the section has the Auto switch, a slider and a Close button");
+    Check(SendMessageW(autoSw, BM_GETCHECK, 0, 0) == BST_CHECKED && Pos(zoom) == 250,
+          "the controls show the stored settings (Auto on by default)");
+    Check(!IsWindowEnabled(zoom), "the fixed zoom is greyed out while Auto is on");
 
     g_settingsChanged = 0;
+    Key(autoSw, VK_SPACE);
+    Check(!settings.cursorOverlayAuto() && IsWindowEnabled(zoom) && g_settingsChanged == 1,
+          "switching Auto off saves it, enables the slider and tells the owner");
     Key(zoom, VK_END);
-    Check(settings.cursorOverlayZoom() == 600 && g_settingsChanged == 1,
+    Check(settings.cursorOverlayZoom() == 600 && g_settingsChanged == 2,
           "moving the slider saves the zoom and tells the owner");
     {
         Settings reread; reread.load();
-        Check(reread.cursorOverlayZoom() == 600, "changes are saved at once");
+        Check(reread.cursorOverlayZoom() == 600 && !reread.cursorOverlayAuto(), "changes are saved at once");
     }
+    Key(autoSw, VK_SPACE);
+    Check(settings.cursorOverlayAuto() && !IsWindowEnabled(zoom), "switching Auto on greys the slider out again");
 
     settings.setGlobalEnabled(false);
     SettingsWindow::Sync();
-    Check(!IsWindowEnabled(zoom), "global off greys out the section");
+    Check(!IsWindowEnabled(autoSw) && !IsWindowEnabled(zoom), "global off greys out the section");
     settings.setGlobalEnabled(true);
+    settings.setCursorOverlayAuto(false);
     settings.setCursorOverlayZoom(150);
     SettingsWindow::Sync();
     Check(IsWindowEnabled(zoom) && Pos(zoom) == 150, "Sync picks up changes made elsewhere");
@@ -870,6 +955,7 @@ int main()
 
     SettingsTests();
     ZoomTests();
+    AutoZoomTests();
     AnyDeskClassTests();
     CursorImageTests();
     ControlTests();

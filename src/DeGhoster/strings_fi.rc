@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoomaus"
     IDS_SETTINGS_HINT    "Vinkki: suurempi hiiren osoitin etätietokoneella antaa terävämmän osoittimen."
     IDS_SETTINGS_CLOSE   "Sulje"
+    IDS_SETTINGS_AUTO    "Automaattinen koko (yhtä suuri kuin paikallinen osoitin)"
 END

@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Sfat: un indicator de mouse mai mare pe computerul la distanță oferă un cursor mai clar."
     IDS_SETTINGS_CLOSE   "Închide"
+    IDS_SETTINGS_AUTO    "Dimensiune automată (cât indicatorul local)"
 END

@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "縮放"
     IDS_SETTINGS_HINT    "提示：在遠端電腦上放大滑鼠指標可獲得更清晰的游標。"
     IDS_SETTINGS_CLOSE   "關閉"
+    IDS_SETTINGS_AUTO    "自動大小（與本機指標一樣大）"
 END

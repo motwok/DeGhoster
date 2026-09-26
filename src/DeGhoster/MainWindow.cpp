@@ -462,6 +462,7 @@ void MainWindow::setGlobalEnabled(bool on)
 void MainWindow::applyCursorOverlay()
 {
     overlay_.setZoom(settings_.cursorOverlayZoom());
+    overlay_.setAuto(settings_.cursorOverlayAuto());
     overlay_.setEnabled(settings_.globalEnabled());
 }
 

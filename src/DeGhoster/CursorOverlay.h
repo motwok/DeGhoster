@@ -18,7 +18,10 @@
 #pragma once
 #include <windows.h>
 #include <functional>
+#include <unordered_map>
 #include <unordered_set>
+#include "AutoZoom.h"
+#include "CursorImage.h"
 
 // The "ghost cursor" for AnyDesk sessions (Specification.md section 10): a
 // click-through, topmost, per-pixel-alpha window that shows an enlarged copy of
@@ -46,6 +49,10 @@ public:
     void refresh();
     // Zoom in percent; takes effect immediately (live preview while over AnyDesk).
     void setZoom(int percent);
+    // Automatic size: per AnyDesk window, the remote cursor shown the longest is
+    // made as tall as the local arrow (AutoZoom). The fixed zoom is the fallback
+    // until a window has shown a cursor.
+    void setAuto(bool on);
     // Session lock/unlock: hide and restore while locked; after unlock the next
     // cursor event decides again.
     void setSessionLocked(bool locked);
@@ -64,7 +71,9 @@ private:
     bool active() const { return enabled_ && !locked_ && wnd_; }
     void hook(bool on);
     void evaluate(bool shapeChanged);
-    bool render(HCURSOR cursor, UINT dpi);
+    bool render(HCURSOR cursor, UINT dpi, int zoom);
+    int effectiveZoom(HWND root, UINT dpi);   // fixed zoom, or the window's automatic one
+    int TargetHeight(UINT dpi);               // local arrow height on screen, cached per DPI
     void place(POINT cursorPos);
     void hide();
     void hideSystemCursor(bool hide);
@@ -73,6 +82,14 @@ private:
     HWINEVENTHOOK hook_ = nullptr;
     bool enabled_ = false, locked_ = false;
     int zoom_ = 100;
+    bool auto_ = false;
+    std::unordered_map<HWND, AutoZoom> autos_;   // per AnyDesk window
+    std::unordered_map<UINT, int> targets_;      // dpi -> local arrow height
+
+    // The current cursor's picture at source size, read once per shape.
+    cursorimg::Image src_;
+    uint64_t srcKey_ = 0;
+    int srcHeight_ = 0;
 
     // What the overlay currently shows; a change of any of them means re-render.
     HCURSOR shownCursor_ = nullptr;

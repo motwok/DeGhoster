@@ -41,8 +41,11 @@ cases that can be detected precisely and mitigated reversibly. This is one.
    are read, because events are coalesced. The subscription exists only while the
    feature and the global switch are on. Animated remote cursors get no special
    handling: every image change AnyDesk makes arrives as a `NAMECHANGE`.
-4. **One user-set zoom factor** (100 … 600 %, first value = the primary monitor's
-   scaling), applied to every remote cursor alike.
+4. **Automatic zoom by on-screen time, per AnyDesk window (default)**, with a
+   user-set fixed factor (100 … 600 %, first value = the primary monitor's scaling)
+   as the alternative. The remote cursor picture shown the longest is the reference —
+   in practice the normal arrow — and the zoom makes it as tall as the local arrow.
+   Pictures are told apart by their pixels; nothing is recognized by shape.
 5. **Sharp bilinear upscaling**: nearest neighbour by the integer part of the factor,
    then bilinear to the exact size, on premultiplied pixels with clamped edges.
    Inverting pixels, which an overlay cannot reproduce, are drawn black with a white
@@ -74,10 +77,14 @@ cases that can be detected precisely and mitigated reversibly. This is one.
 - **−** The enlarged image is an upscaled, already-downscaled picture, so it is softer
   than a native cursor. A larger pointer on the remote machine gives a larger, sharper
   source and is the better lever.
-- **−** One factor does not fit every remote: AnyDesk shrinks cursors by a
-  session-dependent amount, so a Mac remote needs about twice the factor of a Windows
-  remote, and some remotes send the I-beam at its base size while the arrow comes
-  enlarged. This is documented for users.
+- **+** The automatic zoom fits every remote at once: AnyDesk shrinks cursors by a
+  session-dependent amount (a Mac remote needs about twice the factor of a Windows
+  remote), and each window gets its own factor without any setting.
+- **−** The automatic zoom needs a few seconds of use per session to settle, and a
+  session spent mostly in text would make the I-beam the reference (the hysteresis and
+  the 2 s cap per interval keep that rare). Some remotes send the I-beam at its base
+  size while the arrow comes enlarged, so one factor per window cannot make every
+  shape match. This is documented for users.
 - **−** Two more system libraries (`Magnification.dll`, `Wtsapi32.dll`) and a
   per-monitor DPI query (`Shcore.dll`).
 
@@ -95,7 +102,10 @@ cases that can be detected precisely and mitigated reversibly. This is one.
 - **Automatic calibration from the remote arrow** (arrow detected by geometry, factor =
   local arrow height / remote arrow height): plausible factors (Mac 5.17, Windows
   2.45), but it needed extra rules for the I-beam and for look-alikes and still missed
-  Mac I-beam variants. Every new shape needed another heuristic.
+  Mac I-beam variants. Every new shape needed another heuristic. The chosen automatic
+  zoom avoids that by using on-screen time instead of shape.
+- **Only a user-set factor**: one value does not fit a Mac and a Windows remote at the
+  same time; kept as the alternative to Auto.
 - **Recognizing cursor types by shape masks** and drawing the local cursor instead:
   postponed. The masks derive from Apple and Microsoft cursor artwork, and whether
   creating and using them is permitted needs a legal review first.

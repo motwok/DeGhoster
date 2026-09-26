@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "التكبير"
     IDS_SETTINGS_HINT    "تلميح: تكبير مؤشر الماوس على الكمبيوتر البعيد يعطي مؤشرًا أوضح."
     IDS_SETTINGS_CLOSE   "إغلاق"
+    IDS_SETTINGS_AUTO    "حجم تلقائي (بحجم المؤشر المحلي)"
 END

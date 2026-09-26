@@ -74,6 +74,16 @@ void FillPill(HDC hdc, RECT rc, COLORREF color)
     g.FillPath(&b, &p);
 }
 
+void StrokePill(HDC hdc, RECT rc, COLORREF color, float width)
+{
+    G::Graphics g(hdc);
+    g.SetSmoothingMode(G::SmoothingModeAntiAlias);
+    G::GraphicsPath p;
+    PillPath(p, rc, width / 2);
+    G::Pen pen(G::Color(255, GetRValue(color), GetGValue(color), GetBValue(color)), width);
+    g.DrawPath(&pen, &p);
+}
+
 GdiPlus::GdiPlus()
 {
     G::GdiplusStartupInput in;

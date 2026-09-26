@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Tipp: Ein größerer Mauszeiger auf dem entfernten Computer ergibt einen schärferen Zeiger."
     IDS_SETTINGS_CLOSE   "Schließen"
+    IDS_SETTINGS_AUTO    "Automatische Größe (so groß wie der lokale Zeiger)"
 END

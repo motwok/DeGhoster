@@ -23,7 +23,7 @@ public class CursorOverlayTests
     private const uint WM_WTSSESSION_CHANGE = 0x02B1;
     private const int WTS_SESSION_LOCK = 7, WTS_SESSION_UNLOCK = 8;
     private const int IDC_POWER = 1002, IDC_SETTINGS = 1005;
-    private const int IDC_CURSOR_ZOOM = 1102, IDCANCEL = 2, IDC_LIST = 1001;
+    private const int IDC_CURSOR_AUTO = 1101, IDC_CURSOR_ZOOM = 1102, IDCANCEL = 2, IDC_LIST = 1001;
     private const uint WM_EYE_TOGGLE = 0x8041 /* WM_APP+0x41 */, LVM_GETITEMCOUNT = 0x1004;
     private const int VK_SPACE = 0x20, VK_END = 0x23, VK_HOME = 0x24;
     private const int SimX = 200, SimY = 200, SimW = 480, SimH = 360, Band = 40;
@@ -149,6 +149,86 @@ public class CursorOverlayTests
         Assert.True(WaitUntil(() => FindWindow(SettingsClass, null) == IntPtr.Zero, TimeSpan.FromSeconds(3)),
                     "Esc did not close the settings window");
     }
+
+    [SkippableFact]
+    public void Auto_sizes_the_cursor_like_the_local_arrow_and_can_be_switched_off()
+    {
+        using var run = Run.Start("64", "alpha", zoom: null);   // Auto on
+        var (x, y) = run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+
+        // The only picture shown is the reference, so it is made about as tall as
+        // the local arrow (the zoom sits on a 10 % grid and within 100-600 %).
+        int target = Math.Clamp(LocalArrowHeight(MonitorDpi(x, y)), 24, 24 * 6);
+        Assert.True(WaitUntil(() => Math.Abs(Height(ov) - target) <= Math.Max(3, target / 10), TimeSpan.FromSeconds(3)),
+                    $"expected about {target} px (the local arrow), got {Describe(ov)}");
+        Assert.Equal(Height(ov) * 2 / 3, Rect(ov).right - Rect(ov).left, 2.0);   // 16x24 keeps its aspect
+
+        // Auto off in the settings window: the fixed zoom (100 %) applies live.
+        using (var key = Registry.CurrentUser.CreateSubKey(TestSettings.Root, writable: true))
+            key.SetValue("CursorOverlayZoom", 100, RegistryValueKind.DWord);
+        PostMessage(run.Host, WM_COMMAND, (IntPtr)IDC_SETTINGS, IntPtr.Zero);
+        IntPtr settings = WaitFor(() => FindWindow(SettingsClass, null), TimeSpan.FromSeconds(5));
+        Assert.True(settings != IntPtr.Zero, "the settings window did not open");
+        IntPtr autoSw = GetDlgItem(settings, IDC_CURSOR_AUTO), zoomSl = GetDlgItem(settings, IDC_CURSOR_ZOOM);
+        Assert.False(IsWindowEnabled(zoomSl), "the fixed zoom is not greyed out while Auto is on");
+        SendMessage(autoSw, WM_KEYDOWN, (IntPtr)VK_SPACE, IntPtr.Zero);
+        Assert.Equal(0, ReadDword("CursorOverlayAuto"));
+        Assert.True(IsWindowEnabled(zoomSl), "switching Auto off did not enable the fixed zoom");
+        SendMessage(zoomSl, WM_KEYDOWN, (IntPtr)VK_HOME, IntPtr.Zero);   // 100 %
+        run.MoveInside();
+        AssertRect(ov, x - 2, y - 3, 16, 24);
+        PostMessage(settings, WM_COMMAND, (IntPtr)IDCANCEL, IntPtr.Zero);
+    }
+
+    private static int Height(IntPtr h) => Rect(h).bottom - Rect(h).top;
+
+    // The local arrow's height on screen: the visible rows of the system arrow's
+    // picture (as a per-monitor aware thread gets it) times DPI/96. The standard
+    // arrows have an alpha channel; a monochrome scheme is counted by its AND mask.
+    private static int LocalArrowHeight(uint dpi)
+    {
+        IntPtr arrow = LoadCursor(IntPtr.Zero, (IntPtr)32512);
+        if (!GetIconInfo(arrow, out ICONINFO ii)) return 0;
+        try
+        {
+            bool color = ii.hbmColor != IntPtr.Zero;
+            IntPtr bmp = color ? ii.hbmColor : ii.hbmMask;
+            GetObject(bmp, Marshal.SizeOf<BITMAP>(), out BITMAP bm);
+            int w = bm.bmWidth, rows = color ? bm.bmHeight : bm.bmHeight / 2;
+            var bi = new BITMAPINFOHEADER { biSize = Marshal.SizeOf<BITMAPINFOHEADER>(), biWidth = w, biHeight = -rows, biPlanes = 1, biBitCount = 32 };
+            var px = new int[w * rows];
+            IntPtr dc = GetDC(IntPtr.Zero);
+            GetDIBits(dc, bmp, 0, (uint)rows, px, ref bi, 0);
+            ReleaseDC(IntPtr.Zero, dc);
+            int top = -1, bottom = -1;
+            for (int y = 0; y < rows; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int p = px[y * w + x];
+                    bool visible = color ? ((uint)p >> 24) != 0 : (p & 0xFFFFFF) == 0;
+                    if (visible) { if (top < 0) top = y; bottom = y; break; }
+                }
+            return top < 0 ? 0 : (bottom - top + 1) * (int)dpi / 96;
+        }
+        finally
+        {
+            if (ii.hbmColor != IntPtr.Zero) DeleteObject(ii.hbmColor);
+            if (ii.hbmMask != IntPtr.Zero) DeleteObject(ii.hbmMask);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)] private struct ICONINFO { public bool fIcon; public int xHotspot, yHotspot; public IntPtr hbmMask, hbmColor; }
+    [StructLayout(LayoutKind.Sequential)] private struct BITMAP { public int bmType, bmWidth, bmHeight, bmWidthBytes; public short bmPlanes, bmBitsPixel; public IntPtr bmBits; }
+    [StructLayout(LayoutKind.Sequential)] private struct BITMAPINFOHEADER { public int biSize, biWidth, biHeight; public short biPlanes, biBitCount; public int biCompression, biSizeImage, biXPelsPerMeter, biYPelsPerMeter, biClrUsed, biClrImportant; }
+    [DllImport("user32.dll")] private static extern IntPtr LoadCursor(IntPtr inst, IntPtr id);
+    [DllImport("user32.dll")] private static extern bool GetIconInfo(IntPtr icon, out ICONINFO ii);
+    [DllImport("gdi32.dll")] private static extern int GetObject(IntPtr h, int size, out BITMAP bm);
+    [DllImport("gdi32.dll")] private static extern int GetDIBits(IntPtr dc, IntPtr bmp, uint start, uint lines, int[] bits, ref BITMAPINFOHEADER bi, uint usage);
+    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr h);
+    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr h);
+    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr h, IntPtr dc);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr h);
 
     [SkippableFact]
     public void Each_AnyDesk_window_has_its_own_eye()
@@ -318,6 +398,7 @@ public class CursorOverlayTests
         public Process Dg = null!;
         public IntPtr Host;
 
+        // `zoom` is a fixed zoom (Auto off); null leaves Auto on, the default.
         public static Run Start(string bits, string kind, int? zoom, bool needCursor = true,
                                 Dictionary<string, string>? env = null)
         {
@@ -326,7 +407,7 @@ public class CursorOverlayTests
             TestSettings.EnsureGlobalEnabled();
             using (var key = Registry.CurrentUser.CreateSubKey(TestSettings.Root, writable: true))
             {
-
+                key.SetValue("CursorOverlayAuto", zoom.HasValue ? 0 : 1, RegistryValueKind.DWord);
                 if (zoom.HasValue) key.SetValue("CursorOverlayZoom", zoom.Value, RegistryValueKind.DWord);
             }
             try

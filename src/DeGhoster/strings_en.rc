@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "Zoom"
     IDS_SETTINGS_HINT    "Tip: enlarging the mouse pointer on the remote computer gives a sharper cursor."
     IDS_SETTINGS_CLOSE   "Close"
+    IDS_SETTINGS_AUTO    "Automatic size (as large as the local pointer)"
 END

@@ -19,15 +19,21 @@
 #include <windows.h>
 #include "Theme.h"
 
-// Owner-drawn controls in the look of the status window: a slider with a value
-// label. Keyboard operable, shows a focus rectangle, greys out when disabled,
-// follows the parent's RTL mirroring and sizes itself from GetDpiForWindow.
+// Owner-drawn controls in the look of the status window: an on/off switch (pill
+// with a knob plus its label) and a slider with a value label. Both are keyboard
+// operable, show a focus rectangle, grey out when disabled, follow the parent's
+// RTL mirroring and size themselves from GetDpiForWindow.
 namespace ui {
 
+inline constexpr wchar_t kToggleClass[] = L"DeGhosterToggle";
 inline constexpr wchar_t kSliderClass[] = L"DeGhosterSlider";
 
-// lParam = const Theme* (copied).
+// Both controls: lParam = const Theme* (copied).
 constexpr UINT CTL_SETTHEME = WM_USER + 0x60;
+
+// Toggle: BM_GETCHECK / BM_SETCHECK (BST_CHECKED / BST_UNCHECKED). Space or a
+// click flips it and notifies the parent with WM_COMMAND(id, BN_CLICKED).
+// The label is the window text.
 
 // Slider: notifies the parent with WM_HSCROLL(MAKEWPARAM(SB_THUMBPOSITION, pos), hwnd)
 // whenever the user changes the value. Keys: arrows +/- step, PgUp/PgDn +/- page,

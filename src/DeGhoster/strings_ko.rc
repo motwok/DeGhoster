@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "확대/축소"
     IDS_SETTINGS_HINT    "팁: 원격 컴퓨터에서 마우스 포인터를 크게 하면 커서가 더 선명해집니다."
     IDS_SETTINGS_CLOSE   "닫기"
+    IDS_SETTINGS_AUTO    "자동 크기 (로컬 포인터와 같은 크기)"
 END

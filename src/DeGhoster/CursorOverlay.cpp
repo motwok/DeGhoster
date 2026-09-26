@@ -100,6 +100,12 @@ void CursorOverlay::setEnabled(bool on)
     else hide();
 }
 
+void CursorOverlay::setAuto(bool on)
+{
+    auto_ = on;
+    if (active()) evaluate(false);
+}
+
 void CursorOverlay::refresh()
 {
     if (active()) evaluate(false);
@@ -179,8 +185,14 @@ void CursorOverlay::evaluate(bool shapeChanged)
 
     const UINT dpi = DpiAt(pt);
     const bool newShape = shapeChanged || ci.hCursor != shownCursor_;
-    if (newShape || zoom_ != shownZoom_ || dpi != shownDpi_) {
-        if (!render(ci.hCursor, dpi)) { hide(); return; }
+    if (newShape || dpi != shownDpi_) {
+        if (!cursorimg::Read(ci.hCursor, dpi, src_)) { hide(); return; }
+        srcKey_ = cursorimg::Key(src_);
+        srcHeight_ = cursorimg::VisibleHeight(src_);
+    }
+    const int zoom = effectiveZoom(root, dpi);
+    if (newShape || zoom != shownZoom_ || dpi != shownDpi_) {
+        if (!render(ci.hCursor, dpi, zoom)) { hide(); return; }
     }
     place(pt);
     // A cursor AnyDesk sets while the real one is hidden can get drawn once and
@@ -193,11 +205,37 @@ void CursorOverlay::evaluate(bool shapeChanged)
     }
 }
 
-bool CursorOverlay::render(HCURSOR cursor, UINT dpi)
+int CursorOverlay::effectiveZoom(HWND root, UINT dpi)
 {
-    cursorimg::Image src;
-    if (!cursorimg::Read(cursor, dpi, src)) return false;
-    const cursorimg::Image img = cursorimg::Scale(src, zoom_);
+    if (!auto_) return zoom_;
+    // Forget windows that are gone, so the map only holds live sessions.
+    if (!autos_.count(root))
+        for (auto it = autos_.begin(); it != autos_.end();)
+            it = IsWindow(it->first) ? std::next(it) : autos_.erase(it);
+    AutoZoom& az = autos_[root];
+    az.observe(srcKey_, srcHeight_, GetTickCount64());
+    const int z = az.zoom(TargetHeight(dpi));
+    return z ? z : zoom_;
+}
+
+// How tall the local arrow is on screen at `dpi`: the visible part of the system
+// arrow's picture (which Windows hands a per-monitor aware process at its base
+// size) scaled to the monitor, as measured in the proof of concept.
+int CursorOverlay::TargetHeight(UINT dpi)
+{
+    auto it = targets_.find(dpi);
+    if (it != targets_.end()) return it->second;
+    cursorimg::Image arrow;
+    int h = 0;
+    if (cursorimg::Read(LoadCursorW(nullptr, IDC_ARROW), dpi, arrow))
+        h = MulDiv(cursorimg::VisibleHeight(arrow), (int)dpi, 96);
+    targets_[dpi] = h;
+    return h;
+}
+
+bool CursorOverlay::render(HCURSOR cursor, UINT dpi, int zoom)
+{
+    const cursorimg::Image img = cursorimg::Scale(src_, zoom);
 
     BITMAPINFO bi{};
     bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
@@ -228,7 +266,7 @@ bool CursorOverlay::render(HCURSOR cursor, UINT dpi)
     if (!ok) return false;
 
     shownCursor_ = cursor;
-    shownZoom_ = zoom_;
+    shownZoom_ = zoom;
     shownDpi_ = dpi;
     hot_ = img.hot;
     return true;

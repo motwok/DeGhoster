@@ -22,8 +22,9 @@ namespace gfx {
 
 void DrawGlyph(HDC hdc, RECT rc, const wchar_t* glyph, COLORREF color, int pxSize);
 void FillCircle(HDC hdc, RECT rc, BYTE alpha, COLORREF color);
-// A filled pill (rectangle with fully rounded ends).
+// A pill (rectangle with fully rounded ends), filled or as an outline.
 void FillPill(HDC hdc, RECT rc, COLORREF color);
+void StrokePill(HDC hdc, RECT rc, COLORREF color, float width);
 
 class GdiPlus {
 public:

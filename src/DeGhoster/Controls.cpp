@@ -34,7 +34,8 @@ namespace {
 struct State {
     Theme theme;
     HFONT font = nullptr;
-    int min = 0, max = 100, pos = 0;
+    bool checked = false;              // toggle
+    int min = 0, max = 100, pos = 0;   // slider
     int step = 1, page = 10;
     bool dragging = false;
 };
@@ -129,6 +130,97 @@ bool Common(HWND h, UINT msg, WPARAM wp, LPARAM lp, LRESULT& r)
         return true;
     }
     return false;
+}
+
+// ---- toggle -----------------------------------------------------------------
+
+void PaintToggle(HWND h, HDC dc)
+{
+    State* s = Get(h);
+    Painter p(h, dc);
+    const RECT rc = p.client;
+    Fill(dc, rc, s->theme.back);
+
+    const bool enabled = IsWindowEnabled(h) != FALSE;
+    const int pw = S(h, 40), ph = S(h, 20), inset = S(h, 3), gap = S(h, 4);
+    RECT pill{ rc.left + inset, (rc.top + rc.bottom - ph) / 2, rc.left + inset + pw, (rc.top + rc.bottom + ph) / 2 };
+    const int kd = ph - 2 * gap;   // knob diameter
+    const int ky = pill.top + gap;
+    if (s->checked) {
+        gfx::FillPill(dc, p(pill), enabled ? s->theme.accentOn : s->theme.accentOff);
+        RECT k{ pill.right - gap - kd, ky, pill.right - gap, ky + kd };
+        gfx::FillCircle(dc, p(k), 255, RGB(255, 255, 255));
+    } else {
+        gfx::StrokePill(dc, p(pill), s->theme.foreDim, std::max(1.0f, GetDpiForWindow(h) / 96.0f * 1.5f));
+        RECT k{ pill.left + gap, ky, pill.left + gap + kd, ky + kd };
+        gfx::FillCircle(dc, p(k), 255, s->theme.foreDim);
+    }
+
+    wchar_t text[256] = L"";
+    GetWindowTextW(h, text, ARRAYSIZE(text));
+    HFONT of = (HFONT)SelectObject(dc, s->font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, enabled ? s->theme.fore : s->theme.foreDim);
+    RECT tr = p(RECT{ pill.right + S(h, 10), rc.top, rc.right - inset, rc.bottom });
+    DrawTextW(dc, text, -1, &tr, p.align(DT_LEFT) | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+    SelectObject(dc, of);
+
+    if (ShowFocus(h)) {
+        RECT fr = rc;
+        InflateRect(&fr, -1, -1);
+        SetTextColor(dc, s->theme.fore);
+        DrawFocusRect(dc, &fr);
+    }
+}
+
+void Flip(HWND h)
+{
+    State* s = Get(h);
+    s->checked = !s->checked;
+    InvalidateRect(h, nullptr, TRUE);
+    SendMessageW(GetParent(h), WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(h), BN_CLICKED), (LPARAM)h);
+}
+
+LRESULT CALLBACK ToggleProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+    LRESULT r;
+    if (Common(h, msg, wp, lp, r)) return r;
+    State* s = Get(h);
+    if (!s) return DefWindowProcW(h, msg, wp, lp);
+
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps);
+        PaintToggle(h, dc);
+        EndPaint(h, &ps);
+        return 0;
+    }
+    case BM_GETCHECK: return s->checked ? BST_CHECKED : BST_UNCHECKED;
+    case BM_SETCHECK:
+        s->checked = wp == BST_CHECKED;
+        InvalidateRect(h, nullptr, TRUE);
+        return 0;
+    case WM_GETDLGCODE: return DLGC_WANTCHARS;
+    case WM_LBUTTONDOWN:
+        SetFocus(h);
+        SetCapture(h);
+        return 0;
+    case WM_LBUTTONUP:
+        if (GetCapture() == h) {
+            ReleaseCapture();
+            POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            RECT rc; GetClientRect(h, &rc);
+            if (PtInRect(&rc, pt)) Flip(h);
+        }
+        return 0;
+    case WM_KEYDOWN:
+        if (wp == VK_SPACE) { Flip(h); return 0; }
+        break;
+    case WM_CHAR:
+        if (wp == L' ') return 0;   // handled on key-down; no beep
+        break;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
 }
 
 // ---- slider -----------------------------------------------------------------
@@ -285,6 +377,9 @@ void RegisterControls(HINSTANCE inst)
     WNDCLASSEXW wc{ sizeof(wc) };
     wc.hInstance = inst;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.lpfnWndProc = ToggleProc;
+    wc.lpszClassName = kToggleClass;
+    RegisterClassExW(&wc);
     wc.lpfnWndProc = SliderProc;
     wc.lpszClassName = kSliderClass;
     RegisterClassExW(&wc);

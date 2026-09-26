@@ -43,4 +43,5 @@ BEGIN
     IDS_SETTINGS_ZOOM    "缩放"
     IDS_SETTINGS_HINT    "提示：在远程计算机上放大鼠标指针可获得更清晰的光标。"
     IDS_SETTINGS_CLOSE   "关闭"
+    IDS_SETTINGS_AUTO    "自动大小（与本地指针一样大）"
 END
