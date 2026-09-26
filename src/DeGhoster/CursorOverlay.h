@@ -72,6 +72,7 @@ private:
     int shownZoom_ = 0;
     UINT shownDpi_ = 0;
     POINT hot_{};              // scaled hotspot of the shown image
+    SIZE size_{};              // size of the shown image (= the window)
     bool visible_ = false;
 
     bool magInit_ = false, cursorHidden_ = false;
