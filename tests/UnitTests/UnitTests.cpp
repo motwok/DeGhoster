@@ -508,6 +508,8 @@ static void SettingsWindowTests()
     RedrawWindow(close, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
     GetWindowRect(w, &r);
     Check(r.right - r.left > suggested.right - suggested.left - 200, "the window grows with the DPI");
+    SendMessageW(w, WM_COMMAND, 9999, 0);
+    Check(SettingsWindow::ActiveHandle() == w, "an unknown command leaves the window open");
     SendMessageW(w, WM_COMMAND, IDCANCEL, 0);
     Pump();
     Check(SettingsWindow::ActiveHandle() == nullptr, "Esc closes the settings window");

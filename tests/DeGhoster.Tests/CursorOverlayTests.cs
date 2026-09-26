@@ -20,6 +20,8 @@ public class CursorOverlayTests
     private const string HostClass = "DeGhosterMainWindow";
     private const string SettingsClass = "DeGhosterSettingsWindow";
     private const uint WM_COMMAND = 0x0111, WM_KEYDOWN = 0x0100, WM_NULL = 0x0000;
+    private const uint WM_WTSSESSION_CHANGE = 0x02B1;
+    private const int WTS_SESSION_LOCK = 7, WTS_SESSION_UNLOCK = 8;
     private const int IDC_POWER = 1002, IDC_SETTINGS = 1005;
     private const int IDC_CURSOR_TOGGLE = 1101, IDC_CURSOR_ZOOM = 1102, IDCANCEL = 2;
     private const int VK_SPACE = 0x20, VK_END = 0x23, VK_HOME = 0x24;
@@ -151,6 +153,29 @@ public class CursorOverlayTests
         PostMessage(settings, WM_COMMAND, (IntPtr)IDCANCEL, IntPtr.Zero);
         Assert.True(WaitUntil(() => FindWindow(SettingsClass, null) == IntPtr.Zero, TimeSpan.FromSeconds(3)),
                     "Esc did not close the settings window");
+    }
+
+    [SkippableFact]
+    public void Session_lock_hides_the_overlay_until_unlock()
+    {
+        using var run = Run.Start("64", "alpha", zoom: 300);
+        run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+
+        // What WTSRegisterSessionNotification delivers around the lock screen.
+        PostMessage(run.Host, WM_WTSSESSION_CHANGE, (IntPtr)WTS_SESSION_LOCK, IntPtr.Zero);
+        Assert.True(WaitUntil(() => !IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "lock kept the overlay");
+        run.MoveInside();
+        Thread.Sleep(400);
+        Assert.False(IsWindowVisible(ov), "the overlay came back while the session is locked");
+
+        PostMessage(run.Host, WM_WTSSESSION_CHANGE, (IntPtr)WTS_SESSION_UNLOCK, IntPtr.Zero);
+        run.MoveInside();
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "unlock did not bring it back");
+
+        PostMessage(run.Host, WM_COMMAND, (IntPtr)9999, IntPtr.Zero);   // an unknown command is ignored
+        Thread.Sleep(200);
+        Assert.False(run.Dg.HasExited, "DeGhoster exited on an unknown command");
     }
 
     [SkippableFact]
