@@ -202,14 +202,6 @@ bool CursorOverlay::render(HCURSOR cursor, UINT dpi)
         POINT cur{}; GetCursorPos(&cur);
         POINT dst{ cur.x - img.hot.x, cur.y - img.hot.y }, src0{ 0, 0 };
         SIZE size{ img.w, img.h };
-        // A size change through UpdateLayeredWindow alone left the part of the
-        // old, larger image that the new one no longer covers on screen over
-        // AnyDesk's surface (e.g. arrow -> resize cursor) until AnyDesk presented
-        // its next frame. Resizing with SetWindowPos first, the same path every
-        // move takes, gets that area recomposed.
-        if (visible_ && (size.cx != size_.cx || size.cy != size_.cy))
-            SetWindowPos(wnd_, HWND_TOPMOST, dst.x, dst.y, size.cx, size.cy,
-                         SWP_NOACTIVATE | SWP_NOOWNERZORDER);
         BLENDFUNCTION blend{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
         ok = UpdateLayeredWindow(wnd_, screen, &dst, &size, mem, &src0, 0, &blend, ULW_ALPHA) != FALSE;
         SelectObject(mem, old);
@@ -223,7 +215,6 @@ bool CursorOverlay::render(HCURSOR cursor, UINT dpi)
     shownZoom_ = zoom_;
     shownDpi_ = dpi;
     hot_ = img.hot;
-    size_ = SIZE{ img.w, img.h };
     return true;
 }
 
