@@ -143,9 +143,20 @@ Integration tests live in `tests/` and prove the actual neutralization end to en
 
 - **`tests/GhostSim`** (C++, built for x64 **and** x86 as `build\GhostSim64.exe` /
   `GhostSim32.exe`) creates a real ghost window matching every `IsBlocker` criterion.
+- **`tests/CursorSim`** (C++, `build\CursorSim64.exe` / `CursorSim32.exe`) simulates an
+  AnyDesk session window: class `ad_win#1`, custom cursors created with
+  `CreateIconIndirect` (colour with alpha, colour without alpha, monochrome with
+  inverting pixels, or a rapid switch between two), a system-cursor band at the top
+  like AnyDesk's own UI, and a click counter in the title.
 - **`tests/DeGhoster.Tests`** (xUnit, .NET) launches GhostSim + DeGhoster and asserts
   the window becomes `DWMWA_CLOAKED`. The `[Theory]` runs both bitnesses, so it covers
   the x64 (Helper64 → Hook64) and x86 (Helper32 → Hook32) injection paths.
+  `CursorOverlayTests` drive DeGhoster against CursorSim and move the real mouse
+  cursor: overlay size and hotspot alignment, every cursor kind, no overlay over
+  system cursors or other windows, click-through, live settings and `--quit`. On a
+  desktop without a visible cursor (no mouse attached) those tests are skipped.
+- **`tests/UnitTests`** (native) test the host modules in-process, including the
+  cursor image pipeline, the switch and slider controls and the settings window.
 
 Build first, then run the tests:
 
@@ -156,8 +167,9 @@ dotnet test tests\DeGhoster.Tests\DeGhoster.Tests.csproj -c Release
 
 They need an **interactive desktop with DWM** (they inject across processes and read
 DWM state), so they run reliably locally and in the CI Windows job, but not in a
-headless/session-0 context. GhostSim is a test-only binary and is **not** shipped in
-the ZIP/MSI. Disable building it with `-DDEGHOSTER_BUILD_TESTS=OFF`.
+headless/session-0 context. GhostSim and CursorSim are test-only binaries and are
+**not** shipped in the ZIP/MSI. Disable building them with
+`-DDEGHOSTER_BUILD_TESTS=OFF`.
 
 ### Code coverage
 

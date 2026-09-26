@@ -5,7 +5,7 @@
 
   *Who you gonna call? Bustin' invisible, click-eating window ghosts.*
 
-  **Neutralizes invisible WebView2/Chromium "ghost windows" that intercept your desktop clicks.**
+  **Neutralizes invisible WebView2/Chromium "ghost windows" that intercept your desktop clicks — and enlarges the tiny remote cursor in AnyDesk sessions.**
 
   [![Build](https://img.shields.io/github/actions/workflow/status/motwok/DeGhoster/build.yml?branch=master&style=flat-square)](https://github.com/motwok/DeGhoster/actions/workflows/build.yml)
   [![Latest release](https://img.shields.io/github/v/release/motwok/DeGhoster?sort=semver&style=flat-square)](https://github.com/motwok/DeGhoster/releases/latest)
@@ -43,9 +43,15 @@ the cursor is back. It runs quietly in the background as a **native Win32 app wi
 runtime dependencies**, follows the Windows light/dark theme, and is localized into
 27 languages.
 
-DeGhoster currently targets this one ghost-window defect; other window issues from
-these apps that can be detected precisely and mitigated reversibly may be added over
-time.
+**AnyDesk remote cursor.** On a high-DPI client (e.g. 4K at 250 %), AnyDesk shows
+the remote computer's mouse cursor tiny, and no AnyDesk setting fixes it. DeGhoster
+shows an enlarged copy on top of it while the mouse is over the remote screen and
+hides the small original — a click-through overlay with an adjustable zoom, no
+injection into AnyDesk, nothing changed in AnyDesk or Windows. Switching it off
+removes every effect at once.
+
+Further issues that can be detected precisely and mitigated reversibly may be added
+over time.
 
 > This is ultimately a bug in the offending apps — **WhatsApp's desktop app is a
 > recurring example** — they should destroy or cloak their own leftover windows.
@@ -68,6 +74,8 @@ Both artifacts are produced by [`build.ps1`](build.ps1) into `dist\` — see
 - **Global on/off** (power button): disables only the *action* — detection keeps
   running.
 - **Per-window on/off:** the eye on each row (green = managed, grey = ignored).
+- **AnyDesk cursor:** on by default; switch it and set the zoom (100–600 %) in the
+  **Settings** window (gear button or tray menu).
 
 The full guide is in the [User Manual](docs/UserManual.md).
 

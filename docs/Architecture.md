@@ -10,6 +10,9 @@ DeGhoster is a native Win32 C++ application with no runtime dependencies
 ([ADR-0001](adr/0001-native-win32-cpp.md)). An x64 **host** does all detection, UI
 and orchestration; the actual neutralization runs **inside** each target process via
 an injected **hook DLL** ([ADR-0002](adr/0002-in-process-cloak-via-hook-dll.md)).
+The AnyDesk cursor overlay is the exception: it runs entirely in the host and
+touches AnyDesk only by reading its cursor
+([ADR-0012](adr/0012-anydesk-cursor-overlay.md), [below](#anydesk-cursor-overlay-adr-0012)).
 
 ```mermaid
 flowchart TB
@@ -18,7 +21,10 @@ flowchart TB
         UI["MainWindow<br/>tray and status window"]
         Engine["GhostEngine<br/>SetWinEventHook, reconcile<br/>tracked / cloaked / disabled"]
         Inj["HookInjector"]
+        Overlay["CursorOverlay<br/>OBJID_CURSOR events,<br/>ghost cursor window"]
     end
+
+    AnyDesk["AnyDesk client (x86)<br/>session window ad_win"]
 
     Helper64["DeGhoster.Helper64.exe (x64)"]
     Helper32["DeGhoster.Helper32.exe (x86)"]
@@ -34,6 +40,8 @@ flowchart TB
     T64 -. "window events" .-> Engine
     T32 -. "window events" .-> Engine
     UI --- Engine
+    UI --- Overlay
+    AnyDesk -. "cursor events, cursor handle (read only)" .-> Overlay
     Engine --> Inj
     Inj == "DgInstallHook (direct)" ==> H64
     Inj == "launch" ==> Helper
@@ -62,16 +70,20 @@ with no shared mutable state beyond the win-event thunk's single-instance pointe
 | Module | Role |
 |---|---|
 | `main.cpp` | `wWinMain`, GDI+/common-controls init, message loop; handles the `--register/--unregister-autostart` CLI hooks (and exits) and the `--taskbar` flag (start hidden in the tray, used by autostart) |
-| `MainWindow` | tray app and status window: toolbar, list, tray menu; owns theme/settings/engine, implements `GhostEngine::Listener` |
+| `MainWindow` | tray app and status window: toolbar, list, tray menu; owns theme/settings/engine/overlay, implements `GhostEngine::Listener`, forwards settings, global switch and session lock/unlock to the overlay |
 | `InfoWindow` | dark-mode "About" popup (modeless, single-instance) |
+| `SettingsWindow` | settings window (modeless, single-instance), built in sections; applies and saves every change at once and tells the owner with `WM_SETTINGS_CHANGED` |
+| `Controls` | owner-drawn on/off switch and slider used by the settings window |
+| `CursorOverlay` | AnyDesk cursor overlay: `OBJID_CURSOR` WinEvents, activation check, overlay window, `MagShowSystemCursor` |
+| `CursorImage` | cursor handle → premultiplied ARGB + hotspot (all three cursor kinds), outline for inverting pixels, sharp-bilinear scaling |
 | `GhostEngine` | detection + cloak + reconcile core, driven by `SetWinEventHook` |
 | `HookInjector` | starts a helper of the target's bitness per target thread and tracks its lifetime |
 | `Autostart` | per-user HKCU `Run` register/unregister (installer hooks) |
-| `Settings` | registry persistence (global switch, per-window opt-outs) |
+| `Settings` | registry persistence (global switch, per-window opt-outs, cursor overlay on/off and zoom) |
 | `Theme` | color set, OS light/dark detection, immersive dark title bar |
 | `Loc` | MUI string loading (`LoadStringW` + cache) and RTL detection |
 | `ProcessUtil` | executable dir, WOW64 check, host-exe resolution, window title |
-| `Gfx` | GDI+ glyph/circle drawing, GDI+ RAII |
+| `Gfx` | GDI+ glyph/circle/pill drawing, GDI+ RAII |
 | `HoverButton` | owner-draw button hover subclass |
 | `Glyphs`, `Dpi`, `FixInfo`, `AppInfo`, `Version.h` | shared constants and small value types (`Version.h` is generated, see [Build.md](Build.md)) |
 
@@ -160,6 +172,63 @@ parent process chain (Toolhelp snapshot) up from the WebView2 process until the 
 non-`msedgewebview2` process, then reads its full image path via
 `QueryFullProcessImageName`. Displayed as `Window title (executable.exe)`.
 
+## AnyDesk cursor overlay ([ADR-0012](adr/0012-anydesk-cursor-overlay.md))
+
+AnyDesk sets the remote cursor as an ordinary Win32 cursor on its session window,
+already shrunk. `CursorOverlay` shows an enlarged copy in a window of its own and
+hides the small original; the requirements are in
+[Specification.md](Specification.md#10-anydesk-remote-cursor).
+
+```mermaid
+sequenceDiagram
+    participant W as Windows
+    participant O as CursorOverlay (host UI thread)
+    participant I as CursorImage
+    participant V as Overlay window
+    W->>O: WinEvent OBJID_CURSOR (location / name / show / hide)
+    O->>W: GetCursorInfo, GetCursorPos, WindowFromPoint, GetClassName
+    alt feature on, cursor showing, root class ad_win, not a system cursor
+        opt handle, zoom or monitor DPI changed (always on a name change)
+            O->>I: Read(cursor, dpi) and Scale(image, zoom)
+            I-->>O: premultiplied ARGB + scaled hotspot
+            O->>V: UpdateLayeredWindow
+        end
+        O->>V: SetWindowPos(HWND_TOPMOST) at cursor − hotspot, SW_SHOWNOACTIVATE
+        O->>W: MagShowSystemCursor(FALSE) on the first show
+    else anything else
+        O->>V: SW_HIDE
+        O->>W: MagShowSystemCursor(TRUE) if it was hidden
+    end
+```
+
+- **Events.** One out-of-context `SetWinEventHook` for `EVENT_OBJECT_SHOW` …
+  `EVENT_OBJECT_NAMECHANGE`; the callback drops everything that is not
+  `OBJID_CURSOR` straight away. Unlike the ghost detection it does **not** skip the
+  own process: cursor events are raised for the process under the cursor, and missing
+  them while the mouse moves from AnyDesk onto a DeGhoster window would strand the
+  overlay there with the real cursor hidden. The hook exists only while the feature
+  and the global switch are on.
+- **Activation.** `CURSOR_SHOWING` stays set while DeGhoster itself hides the cursor
+  with `MagShowSystemCursor`, but is cleared when someone else hides it (the Windows
+  Magnifier's full-screen mode), so the flag can be required unconditionally. The
+  root window under the cursor must have the class `ad_win` (compared up to the first
+  `#`), and the cursor must not be one of the `LoadCursor(NULL, IDC_*)` handles.
+- **Image.** `GetIconInfo` + `GetDIBits` as top-down 32-bit pixels; colour with alpha
+  is used as is, colour without alpha and monochrome cursors are decoded through the
+  AND/XOR masks. Inverting pixels become black with a white outline of radius
+  `max(1, round(DPI/96 × 0.8))`; the canvas grows by that radius so the outline is
+  never cut off. Scaling is sharp bilinear on premultiplied pixels with clamped
+  edges.
+- **Window.** `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE |
+  WS_EX_TOOLWINDOW`, class `DeGhosterCursorOverlay`; `WM_NCHITTEST` answers
+  `HTTRANSPARENT` and `WM_MOUSEACTIVATE` `MA_NOACTIVATE`. Every move re-asserts
+  `HWND_TOPMOST`, so the taskbar cannot clip it.
+- **Lifecycle.** `MainWindow` pushes `globalEnabled && cursorOverlayEnabled` and the
+  zoom after every change; `WTS_SESSION_LOCK` hides the overlay and restores the
+  cursor, `WTS_SESSION_UNLOCK` leaves it to the next cursor event. `WM_ENDSESSION` and
+  `WM_DESTROY` destroy the overlay, which restores the cursor and calls
+  `MagUninitialize`. A killed process gets its cursor back from Windows.
+
 ## State model
 
 | Set | Meaning |
@@ -185,6 +254,8 @@ the stable key part).
 |---|---|---|
 | `GlobalEnabled` | DWORD | master switch |
 | `Disabled\<ExePath>\|<Title>` | String | one value per disabled window |
+| `CursorOverlayEnabled` | DWORD | AnyDesk cursor overlay on/off (default 1) |
+| `CursorOverlayZoom` | DWORD | overlay zoom in percent, 100 … 600 on a 10 % grid; written on first start from the primary monitor's scaling |
 
 The per-user autostart entry (`...\CurrentVersion\Run\DeGhoster`) is managed by the
 installer / the `Autostart` module, see [ADR-0007](adr/0007-per-user-autostart.md).
@@ -199,6 +270,13 @@ installer / the `Autostart` module, see [ADR-0007](adr/0007-per-user-autostart.m
   image list forces a taller list row so the per-row eye reads clearly.
 - DPI-aware (per-monitor v2); follows the Windows light/dark theme; renders per-OS
   (Win 10 look on Win 10, Win 11 on Win 11) via comctl32 v6 theming and DWM.
+- The settings window measures its text and grows with long translations (up to the
+  monitor's work area) and re-measures on `WM_DPICHANGED`. Its controls
+  (`Controls.cpp`) are custom window classes: the switch is a pill with a knob plus
+  its label, the slider a track, a thumb and a value label. Both are keyboard
+  operable (`WM_GETDLGCODE`, driven by `IsDialogMessage` in the main loop), grey out
+  when disabled and show a focus rectangle following the keyboard cues
+  (`UISF_HIDEFOCUS`).
 
 ## Localization internals ([ADR-0006](adr/0006-mui-localization.md))
 
@@ -209,11 +287,17 @@ neutral module. `cmake/Languages.cmake` (`<culture>=<LANGID>=<rc>`) is the singl
 source of truth; `strings_<lang>.rc` holds the translations. RTL (ar/he):
 `Loc::isRtl()` reads `LOCALE_IREADINGLAYOUT` of the resolved UI language, windows use
 `WS_EX_LAYOUTRTL`, and owner-drawn glyphs are kept upright via `SetLayout(hdc, 0)`.
+GDI+ ignores a mirrored DC, so the switch and the slider keep their geometry and
+mouse positions in logical (mirrored) coordinates but paint after `SetLayout(hdc, 0)`
+with every rectangle mirrored by hand; under RTL the arrow keys follow the visual
+direction.
 Brand strings (app name, tagline, "Buy Me a Coffee", "OK", copyright) stay English
 and are not in the table.
 
 ## Dependencies
 
 None beyond Windows system libraries: `comctl32`, `dwmapi`, `uxtheme`, `gdiplus`,
-`shell32`, `user32`, `gdi32`. No bundled assets. License: **GNU AGPL v3** (see
+`shell32`, `user32`, `gdi32`, `magnification` (hiding the small AnyDesk cursor),
+`shcore` (per-monitor DPI) and `wtsapi32` (session lock notifications). No bundled
+assets. License: **GNU AGPL v3** (see
 `LICENSE`, `NOTICE`).

@@ -15,6 +15,10 @@ To be fair, this is really the other program's housekeeping to do — an app sho
 own leftover windows (the WhatsApp desktop app is a common culprit). Until the app makers get
 around to it, DeGhoster quietly does the tidying for you.
 
+DeGhoster also fixes a second annoyance: in **AnyDesk** remote sessions on a high-resolution
+screen, the mouse cursor of the remote computer is often **tiny**. DeGhoster shows it in a
+comfortable size instead — see [Enlarging the AnyDesk cursor](#enlarging-the-anydesk-cursor).
+
 ## Downloading and installing
 
 There are two ways to get DeGhoster. Both give you the same program. For the full
@@ -51,7 +55,8 @@ there's no Start-menu entry, and it does **not** start automatically at sign-in 
 you launch it yourself whenever you want it.
 
 Like the installed version, it does remember your **preferences** (whether it's
-paused and which windows you switched off) under your own Windows account in the
+paused, which windows you switched off and your AnyDesk cursor settings) under your
+own Windows account in the
 registry (`HKEY_CURRENT_USER\Software\DeGhoster`). That's the only thing it writes,
 it only affects your account, and it's left behind when you simply delete the
 folder — you can remove it by hand if you want a completely clean slate.
@@ -70,6 +75,9 @@ The ghost icon in the tray is your control center:
 - **Click it** (left or right) to open the menu.
 - **Double-click it** to open the status window (the bold *Status Window* entry is the same
   thing).
+
+The menu also has **Enlarge AnyDesk cursor** (a tick shows it is on; click to switch it) and
+**Settings…**, which opens the settings window.
 
 ## The status window
 
@@ -95,6 +103,49 @@ The **power button** in the toolbar is the master switch:
 
 When you pause it, DeGhoster keeps *watching* and keeps the list up to date — it just stops
 acting until you switch it back on. The tray menu has the same **Active / Inactive** switch.
+Pausing also switches off the enlarged AnyDesk cursor; its settings are greyed out until you
+switch DeGhoster back on.
+
+## Enlarging the AnyDesk cursor
+
+On a high-resolution screen with a large display scaling (for example 4K at 250 %), AnyDesk
+shows the mouse cursor of the remote computer very small — sometimes barely bigger than a
+mosquito. No AnyDesk setting changes that.
+
+DeGhoster puts an enlarged copy of the remote cursor on top of it while your mouse is over
+the AnyDesk session, and hides the small original. It follows the mouse and changes shape
+with it (arrow, text cursor, hand …). Clicks, typing and focus work exactly as before: the
+enlarged cursor is only a picture, every click goes straight through to AnyDesk. Over
+AnyDesk's own title bar, tabs and menus, and everywhere outside AnyDesk, you see your normal
+cursor.
+
+It is **on by default**. To change it, open **Settings** — the **gear** button in the status
+window's toolbar, or **Settings…** in the tray menu:
+
+- **Enlarge AnyDesk cursor** switches the feature on or off.
+- **Zoom** sets how much the remote cursor is enlarged, from 100 % to 600 %. It starts at your
+  display scaling (250 % at 250 %). Changes apply at once: rest the mouse over an AnyDesk
+  session, then adjust the slider with the keyboard (arrow keys ±10 %, Page Up/Page Down
+  ±50 %, Home/End for the limits) and watch the cursor grow or shrink.
+
+Everything is saved immediately; **Close** or **Esc** closes the window.
+
+**Tips for the right size**
+
+- The right zoom depends on the remote computer, because AnyDesk shrinks cursors by a
+  different amount per session. A **Mac** remote typically needs about **twice** the zoom of a
+  **Windows** remote (roughly 500 % vs. 250 % at a 250 % display scaling).
+- For the **sharpest** result, make the mouse pointer larger **on the remote computer**
+  (Windows: *Settings → Accessibility → Mouse pointer*; macOS: *Accessibility → Display →
+  Pointer size*) and use a smaller zoom here. The enlarged cursor is a magnified picture, so a
+  bigger original looks crisper.
+- Some remote computers send the text cursor (I-beam) at its normal size even when the arrow
+  is enlarged, so the text cursor can look a little small next to the arrow.
+
+## The Settings button
+
+The **gear** button (left of the **i**) opens the settings window — see
+[Enlarging the AnyDesk cursor](#enlarging-the-anydesk-cursor).
 
 ## The Info button
 
@@ -110,8 +161,9 @@ restored to normal automatically.
 
 ## It remembers your choices
 
-Any window you switch off, and whether DeGhoster is paused, are remembered between restarts.
-When you start DeGhoster again, it picks up right where you left off.
+Any window you switch off, whether DeGhoster is paused, and your AnyDesk cursor settings are
+remembered between restarts. When you start DeGhoster again, it picks up right where you left
+off.
 
 ## Troubleshooting
 
@@ -125,6 +177,13 @@ When you start DeGhoster again, it picks up right where you left off.
 - **DeGhoster didn't start when I signed in.** Autostart is set up only by the **installer**.
   The portable ZIP never starts on its own — launch `DeGhoster.exe` yourself, or install the
   MSI if you want it to run automatically.
+- **The AnyDesk cursor is still tiny.** Make sure DeGhoster is active (green power button) and
+  **Enlarge AnyDesk cursor** is ticked in the tray menu. The enlarged cursor only appears over
+  the remote screen, not over AnyDesk's own tabs and menus.
+- **The AnyDesk cursor is too big or too small.** Adjust **Zoom** in the settings window. A
+  Mac and a Windows remote usually need different values (see the tips above).
+- **The AnyDesk cursor looks blurry.** Enlarge the mouse pointer on the remote computer and
+  lower the zoom here.
 - **The menus are in the wrong language.** DeGhoster follows your **Windows display language**.
   Make sure that language was ticked during installation (English is always available as a
   fallback); then sign out and back in.
