@@ -17,6 +17,7 @@
 #include "Controls.h"
 #include "SettingsWindow.h"
 #include "InfoWindow.h"
+#include "GhostEngine.h"
 #include "Gfx.h"
 #include "Loc.h"
 
@@ -82,16 +83,6 @@ static void SettingsTests()
         Check(!s2.isManaged(shortKey), "opt-out after a long one is not dropped");
     }
 
-    {
-        Settings s; s.load();
-        Check(s.cursorOverlayEnabled(), "CursorOverlayEnabled defaults to true");
-        s.setCursorOverlayEnabled(false);
-        Settings s2; s2.load();
-        Check(!s2.cursorOverlayEnabled(), "CursorOverlayEnabled=false persists across reload");
-        s2.setCursorOverlayEnabled(true);
-        Settings s3; s3.load();
-        Check(s3.cursorOverlayEnabled(), "CursorOverlayEnabled=true persists across reload");
-    }
     {
         // First start: the zoom comes from the monitor scaling and is written
         // back at once, so a later change of the scaling cannot move it.
@@ -357,37 +348,12 @@ static void ControlTests()
 
     for (int rtl = 0; rtl < 2; ++rtl) {
         HWND parent = MakeParent(rtl != 0);
-        HWND tg = CreateWindowExW(0, ui::kToggleClass, L"Switch", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                                  10, 10, 300, 32, parent, (HMENU)(UINT_PTR)7, inst, nullptr);
         HWND sl = CreateWindowExW(0, ui::kSliderClass, L"Zoom", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                                   10, 50, 400, 32, parent, (HMENU)(UINT_PTR)8, inst, nullptr);
-        SendMessageW(tg, ui::CTL_SETTHEME, 0, (LPARAM)&theme);
         SendMessageW(sl, ui::CTL_SETTHEME, 0, (LPARAM)&theme);
-        SendMessageW(tg, WM_SETFONT, (WPARAM)font, TRUE);
         SendMessageW(sl, WM_SETFONT, (WPARAM)font, TRUE);
-        Check((HFONT)SendMessageW(tg, WM_GETFONT, 0, 0) == font, "controls keep their font");
+        Check((HFONT)SendMessageW(sl, WM_GETFONT, 0, 0) == font, "the slider keeps its font");
 
-        // Toggle
-        g_commands = 0;
-        Check(SendMessageW(tg, BM_GETCHECK, 0, 0) == BST_UNCHECKED, "toggle starts unchecked");
-        SendMessageW(tg, BM_SETCHECK, BST_CHECKED, 0);
-        Check(SendMessageW(tg, BM_GETCHECK, 0, 0) == BST_CHECKED && g_commands == 0,
-              "BM_SETCHECK sets the state without notifying");
-        Key(tg, VK_SPACE);
-        Check(SendMessageW(tg, BM_GETCHECK, 0, 0) == BST_UNCHECKED && g_commands == 1,
-              "Space flips the toggle and notifies the parent");
-        Check(SendMessageW(tg, WM_GETDLGCODE, 0, 0) == DLGC_WANTCHARS, "toggle wants chars");
-        SendMessageW(tg, WM_CHAR, L' ', 0);
-        Key(tg, VK_RETURN);   // ignored
-        SendMessageW(tg, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(20, 16));
-        SendMessageW(tg, WM_LBUTTONUP, 0, MAKELPARAM(20, 16));
-        Check(SendMessageW(tg, BM_GETCHECK, 0, 0) == BST_CHECKED && g_commands == 2,
-              "a click flips the toggle");
-        SendMessageW(tg, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(20, 16));
-        SendMessageW(tg, WM_LBUTTONUP, 0, MAKELPARAM(900, 16));
-        Check(g_commands == 2, "releasing outside the toggle does not flip it");
-
-        // Slider
         g_scrolls = 0;
         SendMessageW(sl, ui::SLM_SETRANGE, 100, 600);
         SendMessageW(sl, ui::SLM_SETSTEP, 10, 50);
@@ -426,19 +392,14 @@ static void ControlTests()
         Check(Pos(sl) == 100, "moving without the button does nothing");
         SendMessageW(sl, WM_CAPTURECHANGED, 0, 0);
 
-        // Paint in every state: focused, disabled, checked and unchecked.
-        SetFocus(tg);
-        SendMessageW(tg, WM_UPDATEUISTATE, MAKEWPARAM(UIS_CLEAR, UISF_HIDEFOCUS), 0);
-        UpdateWindow(tg);
+        // Paint in every state: focused, disabled.
         SetFocus(sl);
         SendMessageW(sl, WM_UPDATEUISTATE, MAKEWPARAM(UIS_CLEAR, UISF_HIDEFOCUS), 0);
         UpdateWindow(sl);
-        EnableWindow(tg, FALSE);
         EnableWindow(sl, FALSE);
-        SendMessageW(tg, BM_SETCHECK, BST_UNCHECKED, 0);
-        SetWindowTextW(tg, L"Switch (off)");
+        SetWindowTextW(sl, L"Zoom (off)");
         RedrawWindow(parent, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
-        Check(SendMessageW(tg, WM_ERASEBKGND, 0, 0) == 1, "controls skip background erasing");
+        Check(SendMessageW(sl, WM_ERASEBKGND, 0, 0) == 1, "the slider skips background erasing");
         Pump();
 
         DestroyWindow(parent);
@@ -467,35 +428,27 @@ static void SettingsWindowTests()
     Check(SettingsWindow::ActiveHandle() == w, "a second Show reuses the open window");
     Pump();
 
-    HWND tg = GetDlgItem(w, SettingsWindow::IDC_CURSOR_TOGGLE);
     HWND zoom = GetDlgItem(w, SettingsWindow::IDC_CURSOR_ZOOM);
     HWND close = GetDlgItem(w, SettingsWindow::IDC_CLOSE);
-    Check(tg && zoom && close, "the section has a switch, a slider and a Close button");
-    Check(SendMessageW(tg, BM_GETCHECK, 0, 0) == BST_CHECKED && Pos(zoom) == 250,
-          "the controls show the stored settings");
+    Check(zoom && close, "the section has a slider and a Close button");
+    Check(Pos(zoom) == 250, "the slider shows the stored zoom");
 
     g_settingsChanged = 0;
     Key(zoom, VK_END);
     Check(settings.cursorOverlayZoom() == 600 && g_settingsChanged == 1,
           "moving the slider saves the zoom and tells the owner");
-    Key(tg, VK_SPACE);
-    Check(!settings.cursorOverlayEnabled() && g_settingsChanged == 2,
-          "the switch saves the on/off state and tells the owner");
-    Check(!IsWindowEnabled(zoom), "the slider is disabled while the feature is off");
-    Key(tg, VK_SPACE);
-    Check(settings.cursorOverlayEnabled() && IsWindowEnabled(zoom), "switching on enables the slider again");
     {
         Settings reread; reread.load();
-        Check(reread.cursorOverlayZoom() == 600 && reread.cursorOverlayEnabled(), "changes are saved at once");
+        Check(reread.cursorOverlayZoom() == 600, "changes are saved at once");
     }
 
     settings.setGlobalEnabled(false);
     SettingsWindow::Sync();
-    Check(!IsWindowEnabled(tg) && !IsWindowEnabled(zoom), "global off greys out the whole section");
+    Check(!IsWindowEnabled(zoom), "global off greys out the section");
     settings.setGlobalEnabled(true);
     settings.setCursorOverlayZoom(150);
     SettingsWindow::Sync();
-    Check(IsWindowEnabled(tg) && Pos(zoom) == 150, "Sync picks up changes made elsewhere");
+    Check(IsWindowEnabled(zoom) && Pos(zoom) == 150, "Sync picks up changes made elsewhere");
 
     // DPI change, theme change, repaint, then close with Esc (IDCANCEL).
     RECT r; GetWindowRect(w, &r);
@@ -540,6 +493,85 @@ static void SettingsWindowTests()
     }
     DestroyWindow(owner2);
 
+    RegDeleteTreeW(HKEY_CURRENT_USER, root.c_str());
+}
+
+struct CountingListener : GhostEngine::Listener {
+    int changes = 0;
+    void onTrackedChanged() override { ++changes; }
+};
+
+static HWND MakeTopLevel(const wchar_t* cls, const wchar_t* title, DWORD ex)
+{
+    WNDCLASSEXW wc{ sizeof(wc) };
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = cls;
+    RegisterClassExW(&wc);   // fails harmlessly when already registered
+    HWND h = CreateWindowExW(ex | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, cls, title, WS_POPUP,
+                             60, 60, 200, 150, nullptr, nullptr, wc.hInstance, nullptr);
+    return h;
+}
+
+static void GhostEngineTests()
+{
+    std::printf("GhostEngine tests\n");
+    std::wstring root = L"Software\\DeGhoster_Test_GE_" + std::to_wstring(GetCurrentProcessId());
+    SetEnvironmentVariableW(L"DEGHOSTER_SETTINGS_ROOT", root.c_str());
+    RegDeleteTreeW(HKEY_CURRENT_USER, root.c_str());
+    Settings s; s.load();
+    s.setGlobalEnabled(false);   // track only: nothing gets injected or cloaked here
+
+    // Both cases, in this process: an AnyDesk session window and a ghost.
+    HWND ad = MakeTopLevel(L"ad_win#9", L"123 456 789 - AnyDesk", 0);
+    HWND ghost = MakeTopLevel(L"Chrome_WidgetWin_1", L"DeGhoster-EngineGhost", WS_EX_LAYERED);
+    SetLayeredWindowAttributes(ghost, 0, 0, LWA_ALPHA);
+    ShowWindow(ad, SW_SHOWNA);
+    ShowWindow(ghost, SW_SHOWNA);
+    HWND host = MakeParent(false);
+
+    GhostEngine eng(s);
+    CountingListener l;
+    eng.setListener(&l);
+    eng.start(host);
+    const auto& t = eng.tracked();
+    Check(t.count(ad) && t.at(ad).kind == FixInfo::Kind::AnyDesk,
+          "an AnyDesk session window is listed as a case of its own");
+    Check(t.count(ghost) && t.at(ghost).kind == FixInfo::Kind::Ghost, "a ghost is listed as a ghost");
+    Check(eng.ghostCount() >= 2 && l.changes >= 2, "both count and both notify the listener");
+    Check(t.count(ad) && t.at(ad).disableKey().find(L"|123 456 789 - AnyDesk") != std::wstring::npos,
+          "an AnyDesk window is switched off per window, keyed like a ghost");
+    Check(t.count(ad) && eng.trackAnyDesk(ad) == &t.at(ad), "trackAnyDesk finds the tracked window");
+    Check(eng.trackAnyDesk(ghost) == nullptr, "a ghost is not an AnyDesk window");
+    Check(eng.trackAnyDesk(host) == nullptr, "an ordinary window is not tracked");
+
+    // Hidden (the app minimized): stays listed, marked, and comes back unmarked.
+    ShowWindow(ghost, SW_HIDE);
+    ShowWindow(ad, SW_HIDE);
+    eng.tick();
+    Check(t.count(ghost) && t.at(ghost).hidden, "a hidden ghost stays listed, marked hidden");
+    Check(t.count(ad) && t.at(ad).hidden, "a hidden AnyDesk window stays listed, marked hidden");
+    ShowWindow(ghost, SW_SHOWNA);
+    eng.tick();
+    Check(t.count(ghost) && !t.at(ghost).hidden, "shown again, the ghost is no longer marked");
+
+    // The cursor can reach a new AnyDesk window before any of its events do.
+    HWND ad2 = MakeTopLevel(L"ad_win#9", L"987 654 321 - AnyDesk", 0);
+    ShowWindow(ad2, SW_SHOWNA);
+    Check(eng.trackAnyDesk(ad2) != nullptr && t.count(ad2), "trackAnyDesk picks up a new AnyDesk window");
+
+    // Gone, or no longer a ghost: dropped.
+    DestroyWindow(ad);
+    eng.tick();
+    Check(!t.count(ad) && t.count(ad2), "a destroyed AnyDesk window leaves the list, the other stays");
+    SetLayeredWindowAttributes(ghost, 0, 255, LWA_ALPHA);
+    eng.tick();
+    Check(!t.count(ghost), "a window that stops being a ghost leaves the list");
+
+    eng.stop(500);
+    DestroyWindow(ad2);
+    DestroyWindow(ghost);
+    DestroyWindow(host);
     RegDeleteTreeW(HKEY_CURRENT_USER, root.c_str());
 }
 
@@ -843,6 +875,7 @@ int main()
     ControlTests();
     SettingsWindowTests();
     CursorOverlayTests();
+    GhostEngineTests();
     ThemeTests();
     ProcessUtilTests();
     HookInjectorTests();

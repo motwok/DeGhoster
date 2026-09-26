@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Ikkuna (Ohjelma)"
     IDS_HOOK_MISSING    "Vaadittu DeGhoster-osa puuttuu, joten haamuikkunoita ei voi korjata. Asenna DeGhoster uudelleen."
     IDS_MENU_SETTINGS    "Asetukset…"
-    IDS_CURSOR_ENLARGE   "Suurenna AnyDesk-osoitin"
     IDS_SETTINGS_TITLE   "DeGhoster-asetukset"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk-osoitin"
     IDS_SETTINGS_ZOOM    "Zoomaus"

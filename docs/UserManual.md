@@ -76,23 +76,26 @@ The ghost icon in the tray is your control center:
 - **Double-click it** to open the status window (the bold *Status Window* entry is the same
   thing).
 
-The menu also has **Enlarge AnyDesk cursor** (a tick shows it is on; click to switch it) and
-**Settings…**, which opens the settings window.
+The menu also has **Settings…**, which opens the settings window.
 
 ## The status window
 
-The status window shows every ghost window DeGhoster currently knows about, one per line, as
-**Window title (program)** — for example `WhatsApp (WhatsApp.Root.exe)`. The window's title
-bar tells you how many it's handling, e.g. *DeGhoster — 2 Ghosts*.
+The status window shows every window DeGhoster currently takes care of, one per line, as
+**Window title (program)** — for example `WhatsApp (WhatsApp.Root.exe)` for a ghost window or
+`123 456 789 - AnyDesk (AnyDesk.exe)` for an AnyDesk session whose cursor it enlarges. The
+window's title bar tells you how many it's handling, e.g. *DeGhoster — 2 Ghosts*.
 
 Each line has a small **eye icon** on the right:
 
-- **Open eye (green)** — DeGhoster is watching and neutralizing this window (recommended).
+- **Open eye (green)** — DeGhoster is taking care of this window (recommended).
 - **Crossed-out eye (grey)** — DeGhoster is ignoring this window and leaves it alone.
 
 Click the eye to switch that single window. Ignored windows stay in the list so you can turn
 them back on any time. You can do the same from the tray menu, where every detected window
-appears as its own entry.
+appears as its own entry, in the same order as in the list.
+
+A ghost window whose program hides it — for example when you minimize WhatsApp — stays in
+the list, **greyed out**, until the program really closes it. It stays harmless meanwhile.
 
 ## Turning it on and off
 
@@ -103,8 +106,8 @@ The **power button** in the toolbar is the master switch:
 
 When you pause it, DeGhoster keeps *watching* and keeps the list up to date — it just stops
 acting until you switch it back on. The tray menu has the same **Active / Inactive** switch.
-Pausing also switches off the enlarged AnyDesk cursor; its settings are greyed out until you
-switch DeGhoster back on.
+Pausing also switches off the enlarged AnyDesk cursor; the zoom setting is greyed out until
+you switch DeGhoster back on.
 
 ## Enlarging the AnyDesk cursor
 
@@ -119,10 +122,14 @@ enlarged cursor is only a picture, every click goes straight through to AnyDesk.
 AnyDesk's own title bar, tabs and menus, and everywhere outside AnyDesk, you see your normal
 cursor.
 
-It is **on by default**. To change it, open **Settings** — the **gear** button in the status
-window's toolbar, or **Settings…** in the tray menu:
+Every AnyDesk window appears in the status window's list with its own **eye**, just like a
+ghost window, and it is **on** by default. Click the eye (or the window's entry in the tray
+menu) to switch the enlarged cursor off for that one AnyDesk window; the choice is
+remembered per remote computer. With several AnyDesk windows open, each has its own entry.
 
-- **Enlarge AnyDesk cursor** switches the feature on or off.
+To set the size, open **Settings** — the **gear** button in the status window's toolbar, or
+**Settings…** in the tray menu:
+
 - **Zoom** sets how much the remote cursor is enlarged, from 100 % to 600 %. It starts at your
   display scaling (250 % at 250 %). Changes apply at once: rest the mouse over an AnyDesk
   session, then adjust the slider with the keyboard (arrow keys ±10 %, Page Up/Page Down
@@ -161,7 +168,7 @@ restored to normal automatically.
 
 ## It remembers your choices
 
-Any window you switch off, whether DeGhoster is paused, and your AnyDesk cursor settings are
+Any window you switch off, whether DeGhoster is paused, and your AnyDesk cursor zoom are
 remembered between restarts. When you start DeGhoster again, it picks up right where you left
 off.
 
@@ -178,8 +185,8 @@ off.
   The portable ZIP never starts on its own — launch `DeGhoster.exe` yourself, or install the
   MSI if you want it to run automatically.
 - **The AnyDesk cursor is still tiny.** Make sure DeGhoster is active (green power button) and
-  **Enlarge AnyDesk cursor** is ticked in the tray menu. The enlarged cursor only appears over
-  the remote screen, not over AnyDesk's own tabs and menus.
+  the AnyDesk window's eye in the status window is open (green). The enlarged cursor only
+  appears over the remote screen, not over AnyDesk's own tabs and menus.
 - **The AnyDesk cursor is too big or too small.** Adjust **Zoom** in the settings window. A
   Mac and a Windows remote usually need different values (see the tips above).
 - **The AnyDesk cursor looks blurry.** Enlarge the mouse pointer on the remote computer and

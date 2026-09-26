@@ -58,10 +58,12 @@ private:
     void applyTheme();
     void applyFont();
     void rebuildList();
+    std::vector<std::pair<std::wstring, HWND>> sortedRows() const;   // label + window, list order
     void updateStatus();
 
     void drawButton(const DRAWITEMSTRUCT*);
     LRESULT listCustomDraw(NMLVCUSTOMDRAW*);
+    COLORREF rowColor(HWND) const;   // dimmed for a ghost its app has hidden
 
     void showWindow();
     void showTrayMenu();
@@ -70,8 +72,7 @@ private:
 
     void setGlobalEnabled(bool);
     void toggleWindow(HWND ghost);
-    void setCursorOverlayEnabled(bool);
-    void applyCursorOverlay();   // pushes the settings (and the global switch) to the overlay
+    void applyCursorOverlay();   // pushes the zoom and the global switch to the overlay
     void showSettings();
 
     int S(int px) const { return MulDiv(px, dpi_, 96); }

@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Ablak (Program)"
     IDS_HOOK_MISSING    "Hiányzik a DeGhoster egyik szükséges összetevője, ezért a szellemablakok nem javíthatók. Telepítse újra a DeGhostert."
     IDS_MENU_SETTINGS    "Beállítások…"
-    IDS_CURSOR_ENLARGE   "AnyDesk-kurzor nagyítása"
     IDS_SETTINGS_TITLE   "DeGhoster beállításai"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk-kurzor"
     IDS_SETTINGS_ZOOM    "Nagyítás"

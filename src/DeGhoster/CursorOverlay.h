@@ -17,6 +17,7 @@
 
 #pragma once
 #include <windows.h>
+#include <functional>
 #include <unordered_set>
 
 // The "ghost cursor" for AnyDesk sessions (Specification.md section 10): a
@@ -35,8 +36,14 @@ public:
     // Hides the overlay, restores the system cursor, unhooks and releases everything.
     void destroy();
 
-    // Feature switch AND global switch. Off: hidden, cursor restored, events unhooked.
+    // The global switch. Off: hidden, cursor restored, events unhooked.
     void setEnabled(bool on);
+    // Decides per AnyDesk window (the root window under the cursor) whether its
+    // cursor is enlarged: the window's own on/off in the status list. Without a
+    // filter every AnyDesk window qualifies.
+    void setWindowFilter(std::function<bool(HWND root)> filter) { filter_ = std::move(filter); }
+    // Re-evaluates now, e.g. after a window was switched on or off.
+    void refresh();
     // Zoom in percent; takes effect immediately (live preview while over AnyDesk).
     void setZoom(int percent);
     // Session lock/unlock: hide and restore while locked; after unlock the next
@@ -74,6 +81,7 @@ private:
     POINT hot_{};              // scaled hotspot of the shown image
     bool visible_ = false;
 
+    std::function<bool(HWND)> filter_;
     bool magInit_ = false, cursorHidden_ = false;
     std::unordered_set<HCURSOR> systemCursors_;
 

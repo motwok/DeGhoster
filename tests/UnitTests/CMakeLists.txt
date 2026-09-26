@@ -7,6 +7,7 @@ add_executable(UnitTests UnitTests.cpp
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/HookInjector.cpp"
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/CursorImage.cpp"
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/CursorOverlay.cpp"
+  "${CMAKE_SOURCE_DIR}/src/DeGhoster/GhostEngine.cpp"
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/Controls.cpp"
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/SettingsWindow.cpp"
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/InfoWindow.cpp"

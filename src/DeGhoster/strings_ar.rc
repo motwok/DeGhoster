@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "نافذة (ملف تنفيذي)"
     IDS_HOOK_MISSING    "يفتقد DeGhoster مكوّنًا مطلوبًا، لذا لا يمكن إصلاح النوافذ الشبحية. يُرجى إعادة تثبيت DeGhoster."
     IDS_MENU_SETTINGS    "الإعدادات…"
-    IDS_CURSOR_ENLARGE   "تكبير مؤشر AnyDesk"
     IDS_SETTINGS_TITLE   "إعدادات DeGhoster"
     IDS_SETTINGS_CURSOR_SECTION "مؤشر AnyDesk"
     IDS_SETTINGS_ZOOM    "التكبير"

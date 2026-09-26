@@ -23,7 +23,8 @@ public class CursorOverlayTests
     private const uint WM_WTSSESSION_CHANGE = 0x02B1;
     private const int WTS_SESSION_LOCK = 7, WTS_SESSION_UNLOCK = 8;
     private const int IDC_POWER = 1002, IDC_SETTINGS = 1005;
-    private const int IDC_CURSOR_TOGGLE = 1101, IDC_CURSOR_ZOOM = 1102, IDCANCEL = 2;
+    private const int IDC_CURSOR_ZOOM = 1102, IDCANCEL = 2, IDC_LIST = 1001;
+    private const uint WM_EYE_TOGGLE = 0x8041 /* WM_APP+0x41 */, LVM_GETITEMCOUNT = 0x1004;
     private const int VK_SPACE = 0x20, VK_END = 0x23, VK_HOME = 0x24;
     private const int SimX = 200, SimY = 200, SimW = 480, SimH = 360, Band = 40;
     private const int CURSOR_SHOWING = 1;
@@ -124,7 +125,7 @@ public class CursorOverlayTests
         run.MoveInside();
         Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "global on did not restore it");
 
-        // Settings window: single instance, the switch and the slider apply live.
+        // Settings window: single instance, the slider applies live.
         PostMessage(run.Host, WM_COMMAND, (IntPtr)IDC_SETTINGS, IntPtr.Zero);
         IntPtr settings = WaitFor(() => FindWindow(SettingsClass, null), TimeSpan.FromSeconds(5));
         Assert.True(settings != IntPtr.Zero, "the settings window did not open");
@@ -133,13 +134,7 @@ public class CursorOverlayTests
         Assert.Equal(settings, FindWindow(SettingsClass, null));
         Assert.Equal(IntPtr.Zero, FindWindowEx(IntPtr.Zero, settings, SettingsClass, null));
 
-        IntPtr toggle = GetDlgItem(settings, IDC_CURSOR_TOGGLE), zoom = GetDlgItem(settings, IDC_CURSOR_ZOOM);
-        SendMessage(toggle, WM_KEYDOWN, (IntPtr)VK_SPACE, IntPtr.Zero);
-        Assert.True(WaitUntil(() => !IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "switching off kept the overlay");
-        Assert.Equal(0, ReadDword("CursorOverlayEnabled"));
-        SendMessage(toggle, WM_KEYDOWN, (IntPtr)VK_SPACE, IntPtr.Zero);
-        Assert.Equal(1, ReadDword("CursorOverlayEnabled"));
-
+        IntPtr zoom = GetDlgItem(settings, IDC_CURSOR_ZOOM);
         SendMessage(zoom, WM_KEYDOWN, (IntPtr)VK_END, IntPtr.Zero);
         Assert.Equal(600, ReadDword("CursorOverlayZoom"));
         var (x, y) = run.MoveInside();
@@ -153,6 +148,81 @@ public class CursorOverlayTests
         PostMessage(settings, WM_COMMAND, (IntPtr)IDCANCEL, IntPtr.Zero);
         Assert.True(WaitUntil(() => FindWindow(SettingsClass, null) == IntPtr.Zero, TimeSpan.FromSeconds(3)),
                     "Esc did not close the settings window");
+    }
+
+    [SkippableFact]
+    public void Each_AnyDesk_window_has_its_own_eye()
+    {
+        using var run = Run.Start("64", "alpha", zoom: 300);
+        run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+
+        // What a click on the window's eye in the status list posts.
+        PostMessage(run.Host, WM_EYE_TOGGLE, run.Sim.Hwnd, IntPtr.Zero);
+        Assert.True(WaitUntil(() => !IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "switching the window off kept the overlay");
+        Assert.True(DisabledKeys().Any(k => k.EndsWith("|" + run.Sim.Title, StringComparison.Ordinal)),
+                    "the window's opt-out was not stored like a ghost's (<exe path>|<title>)");
+        run.MoveInside();
+        Thread.Sleep(400);
+        Assert.False(IsWindowVisible(ov), "the overlay came back over a window that is switched off");
+
+        // A second AnyDesk window is independent of the first.
+        using var second = Sim.Start("64", "alpha", "ad_win#2", SimX + SimW + 20, SimY, 200, 200);
+        run.MoveTo(SimX + SimW + 120, SimY + 120);
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)),
+                    "a second AnyDesk window got no overlay while the first is switched off");
+
+        PostMessage(run.Host, WM_EYE_TOGGLE, run.Sim.Hwnd, IntPtr.Zero);
+        run.MoveInside();
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "switching it on again did not bring it back");
+        Assert.False(DisabledKeys().Any(k => k.EndsWith("|" + run.Sim.Title, StringComparison.Ordinal)),
+                     "the opt-out was not removed");
+    }
+
+    [Fact]
+    public void AnyDesk_windows_are_listed_and_counted()
+    {
+        using var run = Run.Start("64", "alpha", zoom: 300, needCursor: false);
+        Assert.True(WaitUntil(() => Count(run.Host) >= 1, TimeSpan.FromSeconds(5)), "the AnyDesk window was not counted");
+        // The title updates window by window while the startup scan runs (and a
+        // developer machine has windows of its own), so wait until it settles.
+        int with = StableCount(run.Host);
+
+        using (Sim.Start("64", "alpha", "ad_win#2", SimX + SimW + 20, SimY, 200, 200))
+            Assert.True(WaitUntil(() => Count(run.Host) == with + 1, TimeSpan.FromSeconds(5)),
+                        "a second AnyDesk window was not counted as a window of its own");
+        Assert.True(WaitUntil(() => Count(run.Host) == with, TimeSpan.FromSeconds(5)),
+                    $"a closed AnyDesk window was not dropped from the count ({with} -> {Count(run.Host)})");
+        Assert.True((int)SendMessage(GetDlgItem(run.Host, IDC_LIST), LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero) == with,
+                    "the list does not show every counted window");
+    }
+
+    // The number in the status window's title, "DeGhoster — N Ghosts".
+    private static int Count(IntPtr host)
+    {
+        var sb = new StringBuilder(256);
+        GetWindowText(host, sb, sb.Capacity);
+        var m = System.Text.RegularExpressions.Regex.Match(sb.ToString(), @"\d+");
+        return m.Success ? int.Parse(m.Value) : -1;
+    }
+
+    private static int StableCount(IntPtr host)
+    {
+        int last = Count(host);
+        var end = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        for (var since = DateTime.UtcNow; DateTime.UtcNow < end; Thread.Sleep(200))
+        {
+            int now = Count(host);
+            if (now != last) { last = now; since = DateTime.UtcNow; }
+            else if (DateTime.UtcNow - since > TimeSpan.FromSeconds(1.5)) break;
+        }
+        return last;
+    }
+
+    private static string[] DisabledKeys()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(TestSettings.Root + @"\Disabled");
+        return key?.GetValueNames() ?? Array.Empty<string>();
     }
 
     [SkippableFact]
@@ -256,7 +326,7 @@ public class CursorOverlayTests
             TestSettings.EnsureGlobalEnabled();
             using (var key = Registry.CurrentUser.CreateSubKey(TestSettings.Root, writable: true))
             {
-                key.SetValue("CursorOverlayEnabled", 1, RegistryValueKind.DWord);
+
                 if (zoom.HasValue) key.SetValue("CursorOverlayZoom", zoom.Value, RegistryValueKind.DWord);
             }
             try
@@ -337,6 +407,7 @@ public class CursorOverlayTests
     private sealed class Sim : IDisposable
     {
         public Process P = null!;
+        public string Title = "";
         public IntPtr Hwnd;
 
         public static Sim Start(string bits, string kind, string cls, int x, int y, int w, int h)
@@ -346,7 +417,7 @@ public class CursorOverlayTests
             var psi = new ProcessStartInfo(Path.Combine(build, $"CursorSim{bits}.exe"),
                 $"--kind {kind} --class \"{cls}\" --title {title} --x {x} --y {y} --w {w} --h {h} --band {Band} --timeout 120")
                 { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = build };
-            var s = new Sim { P = Process.Start(psi)! };
+            var s = new Sim { P = Process.Start(psi)!, Title = title };
             s.Hwnd = WaitFor(() => FindWindow(cls, title), TimeSpan.FromSeconds(8));
             Assert.True(s.Hwnd != IntPtr.Zero, "CursorSim window not found");
             return s;

@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Window (Executable)"
     IDS_HOOK_MISSING    "A required DeGhoster component is missing, so ghost windows cannot be fixed. Please reinstall DeGhoster."
     IDS_MENU_SETTINGS    "Settings…"
-    IDS_CURSOR_ENLARGE   "Enlarge AnyDesk cursor"
     IDS_SETTINGS_TITLE   "DeGhoster Settings"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk cursor"
     IDS_SETTINGS_ZOOM    "Zoom"

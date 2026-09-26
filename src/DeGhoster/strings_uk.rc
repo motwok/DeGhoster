@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Вікно (Програма)"
     IDS_HOOK_MISSING    "Бракує потрібного компонента DeGhoster, тому вікна-привиди не буде усунено. Перевстановіть DeGhoster."
     IDS_MENU_SETTINGS    "Налаштування…"
-    IDS_CURSOR_ENLARGE   "Збільшити курсор AnyDesk"
     IDS_SETTINGS_TITLE   "Налаштування DeGhoster"
     IDS_SETTINGS_CURSOR_SECTION "Курсор AnyDesk"
     IDS_SETTINGS_ZOOM    "Масштаб"

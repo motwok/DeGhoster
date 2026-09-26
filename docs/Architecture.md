@@ -70,16 +70,16 @@ with no shared mutable state beyond the win-event thunk's single-instance pointe
 | Module | Role |
 |---|---|
 | `main.cpp` | `wWinMain`, GDI+/common-controls init, message loop; handles the `--register/--unregister-autostart` CLI hooks (and exits) and the `--taskbar` flag (start hidden in the tray, used by autostart) |
-| `MainWindow` | tray app and status window: toolbar, list, tray menu; owns theme/settings/engine/overlay, implements `GhostEngine::Listener`, forwards settings, global switch and session lock/unlock to the overlay |
+| `MainWindow` | tray app and status window: toolbar, list, tray menu; owns theme/settings/engine/overlay, implements `GhostEngine::Listener`, forwards the zoom, the global switch, per-window changes and session lock/unlock to the overlay and gives it the per-window filter |
 | `InfoWindow` | dark-mode "About" popup (modeless, single-instance) |
 | `SettingsWindow` | settings window (modeless, single-instance), built in sections; applies and saves every change at once and tells the owner with `WM_SETTINGS_CHANGED` |
-| `Controls` | owner-drawn on/off switch and slider used by the settings window |
-| `CursorOverlay` | AnyDesk cursor overlay: `OBJID_CURSOR` WinEvents, activation check, overlay window, `MagShowSystemCursor` |
+| `Controls` | owner-drawn slider used by the settings window |
+| `CursorOverlay` | AnyDesk cursor overlay: `OBJID_CURSOR` WinEvents, activation check (asks the per-window filter), overlay window, `MagShowSystemCursor` |
 | `CursorImage` | cursor handle → premultiplied ARGB + hotspot (all three cursor kinds), outline for inverting pixels, sharp-bilinear scaling |
-| `GhostEngine` | detection + cloak + reconcile core, driven by `SetWinEventHook` |
+| `GhostEngine` | detection + cloak + reconcile core for every case (ghosts and AnyDesk windows), driven by `SetWinEventHook` |
 | `HookInjector` | starts a helper of the target's bitness per target thread and tracks its lifetime |
 | `Autostart` | per-user HKCU `Run` register/unregister (installer hooks) |
-| `Settings` | registry persistence (global switch, per-window opt-outs, cursor overlay on/off and zoom) |
+| `Settings` | registry persistence (global switch, per-window opt-outs, cursor overlay zoom) |
 | `Theme` | color set, OS light/dark detection, immersive dark title bar |
 | `Loc` | MUI string loading (`LoadStringW` + cache) and RTL detection |
 | `ProcessUtil` | executable dir, WOW64 check, host-exe resolution, window title |
@@ -96,13 +96,26 @@ events — no polling.
 | Event | Action |
 |---|---|
 | `EVENT_OBJECT_CREATE` / `SHOW` / `LOCATIONCHANGE` | check candidate → track + reconcile |
+| `EVENT_OBJECT_SHOW` / `HIDE` of a tracked window | update its *hidden* mark |
 | `EVENT_OBJECT_DESTROY` | drop from list |
 
 Only `idObject == OBJID_WINDOW`, `idChild == CHILDID_SELF` events are considered. A
-one-time `EnumWindows` scan on startup catches already-open ghosts. The ghost
-criteria (including the `LWA_ALPHA` discriminator,
-[ADR-0004](adr/0004-lwa-alpha-ghost-discriminator.md)) are defined in
-[Specification.md](Specification.md#2-ghost-window-definition).
+one-time `EnumWindows` scan on startup catches already-open windows. A candidate is
+tracked as one of two kinds (`FixInfo::Kind`):
+
+- **Ghost** — the ghost criteria (including the `LWA_ALPHA` discriminator,
+  [ADR-0004](adr/0004-lwa-alpha-ghost-discriminator.md)) are defined in
+  [Specification.md](Specification.md#2-ghost-window-definition). Only ghosts are
+  reconciled, i.e. cloaked through a hook.
+- **AnyDesk** — a visible top-level window of class `ad_win` (up to the first `#`).
+  Nothing is done to it; the cursor overlay asks the engine (`trackAnyDesk`) whether
+  the window under the cursor is tracked and switched on. `trackAnyDesk` also tracks a
+  window its events have not reported yet.
+
+The one-second `tick()` drops a window only when it is destroyed or, for a ghost,
+stops meeting the ghost criteria. Visibility is deliberately not one of them: a
+ghost its app hid (minimized) stays tracked and neutralized, marked `hidden` and
+drawn greyed out in the list, until it is destroyed.
 
 ## Why a ghost eats clicks
 
@@ -187,7 +200,7 @@ sequenceDiagram
     participant V as Overlay window
     W->>O: WinEvent OBJID_CURSOR (location / name / show / hide)
     O->>W: GetCursorInfo, GetCursorPos, WindowFromPoint, GetClassName
-    alt feature on, cursor showing, root class ad_win, not a system cursor
+    alt global on, cursor showing, root class ad_win, not a system cursor, that window switched on
         opt handle, zoom or monitor DPI changed (always on a name change)
             O->>I: Read(cursor, dpi) and Scale(image, zoom)
             I-->>O: premultiplied ARGB + scaled hotspot
@@ -206,8 +219,8 @@ sequenceDiagram
   `OBJID_CURSOR` straight away. Unlike the ghost detection it does **not** skip the
   own process: cursor events are raised for the process under the cursor, and missing
   them while the mouse moves from AnyDesk onto a DeGhoster window would strand the
-  overlay there with the real cursor hidden. The hook exists only while the feature
-  and the global switch are on.
+  overlay there with the real cursor hidden. The hook exists only while the global
+  switch is on.
 - **Activation.** `CURSOR_SHOWING` stays set while DeGhoster itself hides the cursor
   with `MagShowSystemCursor`, but is cleared when someone else hides it (the Windows
   Magnifier's full-screen mode), so the flag can be required unconditionally. The
@@ -228,8 +241,12 @@ sequenceDiagram
   until a click refreshes it. After every new shape the overlay therefore calls
   `MagShowSystemCursor(TRUE)` and `FALSE` back to back, which makes Windows drop the
   stale image without a visible flicker.
-- **Lifecycle.** `MainWindow` pushes `globalEnabled && cursorOverlayEnabled` and the
-  zoom after every change; `WTS_SESSION_LOCK` hides the overlay and restores the
+- **Per window.** Each AnyDesk window is a tracked case with its own eye. The overlay
+  gets a filter from `MainWindow` that looks the root window up with
+  `GhostEngine::trackAnyDesk` and checks its opt-out key; toggling an eye calls
+  `CursorOverlay::refresh()`, so a window switched off under the cursor loses the
+  overlay at once.
+- **Lifecycle.** `MainWindow` pushes `globalEnabled` and the zoom after every change; `WTS_SESSION_LOCK` hides the overlay and restores the
   cursor, `WTS_SESSION_UNLOCK` leaves it to the next cursor event. `WM_ENDSESSION` and
   `WM_DESTROY` destroy the overlay, which restores the cursor and calls
   `MagUninitialize`. A killed process gets its cursor back from Windows.
@@ -238,8 +255,8 @@ sequenceDiagram
 
 | Set | Meaning |
 |---|---|
-| tracked | every live ghost window currently listed |
-| cloaked | tracked windows currently cloaked by us |
+| tracked | every live window of every case currently listed (ghosts and AnyDesk windows, hidden ones included) |
+| cloaked | tracked ghosts currently cloaked by us |
 | disabled | per-window opt-out, key `<ExePath>\|<WindowTitle>` |
 | global enabled | master switch |
 
@@ -259,7 +276,6 @@ the stable key part).
 |---|---|---|
 | `GlobalEnabled` | DWORD | master switch |
 | `Disabled\<ExePath>\|<Title>` | String | one value per disabled window |
-| `CursorOverlayEnabled` | DWORD | AnyDesk cursor overlay on/off (default 1) |
 | `CursorOverlayZoom` | DWORD | overlay zoom in percent, 100 … 600 on a 10 % grid; written on first start from the primary monitor's scaling |
 
 The per-user autostart entry (`...\CurrentVersion\Run\DeGhoster`) is managed by the
@@ -277,10 +293,9 @@ installer / the `Autostart` module, see [ADR-0007](adr/0007-per-user-autostart.m
   (Win 10 look on Win 10, Win 11 on Win 11) via comctl32 v6 theming and DWM.
 - The settings window measures its text and grows with long translations (up to the
   monitor's work area) and re-measures on `WM_DPICHANGED`. Its controls
-  (`Controls.cpp`) are custom window classes: the switch is a pill with a knob plus
-  its label, the slider a track, a thumb and a value label. Both are keyboard
-  operable (`WM_GETDLGCODE`, driven by `IsDialogMessage` in the main loop), grey out
-  when disabled and show a focus rectangle following the keyboard cues
+  (`Controls.cpp`) are custom window classes: the slider draws a track, a thumb and
+  a value label. It is keyboard operable (`WM_GETDLGCODE`, driven by
+  `IsDialogMessage` in the main loop), greys out when disabled and show a focus rectangle following the keyboard cues
   (`UISF_HIDEFOCUS`).
 
 ## Localization internals ([ADR-0006](adr/0006-mui-localization.md))
@@ -292,8 +307,8 @@ neutral module. `cmake/Languages.cmake` (`<culture>=<LANGID>=<rc>`) is the singl
 source of truth; `strings_<lang>.rc` holds the translations. RTL (ar/he):
 `Loc::isRtl()` reads `LOCALE_IREADINGLAYOUT` of the resolved UI language, windows use
 `WS_EX_LAYOUTRTL`, and owner-drawn glyphs are kept upright via `SetLayout(hdc, 0)`.
-GDI+ ignores a mirrored DC, so the switch and the slider keep their geometry and
-mouse positions in logical (mirrored) coordinates but paint after `SetLayout(hdc, 0)`
+GDI+ ignores a mirrored DC, so the slider keeps its geometry and
+mouse positions in logical (mirrored) coordinates but paints after `SetLayout(hdc, 0)`
 with every rectangle mirrored by hand; under RTL the arrow keys follow the visual
 direction.
 Brand strings (app name, tagline, "Buy Me a Coffee", "OK", copyright) stay English

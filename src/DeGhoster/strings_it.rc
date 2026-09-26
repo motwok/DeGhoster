@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Finestra (Eseguibile)"
     IDS_HOOK_MISSING    "Manca un componente necessario di DeGhoster, quindi le finestre fantasma non possono essere corrette. Reinstalla DeGhoster."
     IDS_MENU_SETTINGS    "Impostazioni…"
-    IDS_CURSOR_ENLARGE   "Ingrandisci il cursore di AnyDesk"
     IDS_SETTINGS_TITLE   "Impostazioni di DeGhoster"
     IDS_SETTINGS_CURSOR_SECTION "Cursore di AnyDesk"
     IDS_SETTINGS_ZOOM    "Zoom"

@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Vindue (Program)"
     IDS_HOOK_MISSING    "En påkrævet DeGhoster-komponent mangler, så spøgelsesvinduer kan ikke rettes. Installer DeGhoster igen."
     IDS_MENU_SETTINGS    "Indstillinger…"
-    IDS_CURSOR_ENLARGE   "Forstør AnyDesk-markøren"
     IDS_SETTINGS_TITLE   "DeGhoster-indstillinger"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk-markør"
     IDS_SETTINGS_ZOOM    "Zoom"

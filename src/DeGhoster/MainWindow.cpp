@@ -48,7 +48,7 @@ constexpr UINT WM_EYE_TOGGLE = WM_APP + 0x41;
 constexpr UINT_PTR kListSubclassId = 1;
 constexpr UINT_PTR kPendingTimer = 1;
 enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT, IDC_SETTINGS };
-enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_SETTINGS, IDM_CURSOR, IDM_WIN_BASE = 3000 };
+enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_SETTINGS, IDM_WIN_BASE = 3000 };
 
 // Cross-process "show yourself" ping from a second launch. RegisterWindowMessage
 // returns the same value in every process for this string.
@@ -188,7 +188,13 @@ bool MainWindow::create(HINSTANCE inst, bool startHidden)
     SetTimer(h, kPendingTimer, 1000, nullptr);
     // The AnyDesk cursor overlay: its own window and WinEvent subscription, and
     // lock/unlock notifications so the real cursor is restored on the lock screen.
+    // Each AnyDesk window is a listed case with its own eye, like a ghost; the
+    // overlay only enlarges the cursor over the windows that are switched on.
     overlay_.create(inst);
+    overlay_.setWindowFilter([this](HWND root) {
+        const FixInfo* fi = engine_.trackAnyDesk(root);
+        return fi && settings_.isManaged(fi->disableKey());
+    });
     applyCursorOverlay();
     WTSRegisterSessionNotification(h, NOTIFY_FOR_THIS_SESSION);
     updateStatus();
@@ -296,6 +302,22 @@ void MainWindow::sizeListColumns()
     ListView_SetColumnWidth(list_, 1, eye);
 }
 
+// tracked() is an unordered_map, so iteration order is unstable and rows would
+// visibly reshuffle. Sort by label (then hwnd) for a stable, predictable order,
+// the same in the list and in the tray menu.
+std::vector<std::pair<std::wstring, HWND>> MainWindow::sortedRows() const
+{
+    std::vector<std::pair<std::wstring, HWND>> rows;
+    rows.reserve(engine_.tracked().size());
+    for (auto& kv : engine_.tracked())
+        rows.push_back({ RowLabel(kv.second), kv.first });
+    std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
+        int c = CompareStringOrdinal(a.first.c_str(), -1, b.first.c_str(), -1, TRUE);
+        return c ? c == CSTR_LESS_THAN : a.second < b.second;
+    });
+    return rows;
+}
+
 void MainWindow::rebuildList()
 {
     // Remember the selected ghost so a rebuild (fired on every add/remove) doesn't
@@ -307,17 +329,7 @@ void MainWindow::rebuildList()
         if (ListView_GetItem(list_, &s)) selected = (HWND)s.lParam;
     }
 
-    // tracked() is an unordered_map, so iteration order is unstable and rows would
-    // visibly reshuffle. Sort by label (then hwnd) for a stable, predictable list.
-    std::vector<std::pair<std::wstring, HWND>> rows;
-    rows.reserve(engine_.tracked().size());
-    for (auto& kv : engine_.tracked())
-        rows.push_back({ RowLabel(kv.second), kv.first });
-    std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
-        int c = CompareStringOrdinal(a.first.c_str(), -1, b.first.c_str(), -1, TRUE);
-        return c ? c == CSTR_LESS_THAN : a.second < b.second;
-    });
-
+    const auto rows = sortedRows();
     ListView_DeleteAllItems(list_);
     for (auto& r : rows) {
         LVITEMW it{}; it.mask = LVIF_PARAM | LVIF_TEXT;
@@ -388,7 +400,7 @@ LRESULT MainWindow::listCustomDraw(NMLVCUSTOMDRAW* cd)
     case CDDS_ITEMPREPAINT: {
         bool alt = (cd->nmcd.dwItemSpec % 2) != 0;
         cd->clrTextBk = alt ? theme_.rowAlt : theme_.listBg;
-        cd->clrText = theme_.fore;
+        cd->clrText = rowColor((HWND)cd->nmcd.lItemlParam);
         return CDRF_NOTIFYSUBITEMDRAW;
     }
     case CDDS_ITEMPREPAINT | CDDS_SUBITEM: {
@@ -423,11 +435,18 @@ LRESULT MainWindow::listCustomDraw(NMLVCUSTOMDRAW* cd)
         }
         bool alt = (cd->nmcd.dwItemSpec % 2) != 0;
         cd->clrTextBk = alt ? theme_.rowAlt : theme_.listBg;
-        cd->clrText = theme_.fore;
+        cd->clrText = rowColor((HWND)cd->nmcd.lItemlParam);
         return CDRF_NEWFONT;
     }
     }
     return CDRF_DODEFAULT;
+}
+
+// A ghost its app has hidden (minimized) stays listed, greyed out.
+COLORREF MainWindow::rowColor(HWND h) const
+{
+    auto it = engine_.tracked().find(h);
+    return it != engine_.tracked().end() && it->second.hidden ? theme_.foreDim : theme_.fore;
 }
 
 void MainWindow::setGlobalEnabled(bool on)
@@ -443,14 +462,7 @@ void MainWindow::setGlobalEnabled(bool on)
 void MainWindow::applyCursorOverlay()
 {
     overlay_.setZoom(settings_.cursorOverlayZoom());
-    overlay_.setEnabled(settings_.globalEnabled() && settings_.cursorOverlayEnabled());
-}
-
-void MainWindow::setCursorOverlayEnabled(bool on)
-{
-    settings_.setCursorOverlayEnabled(on);
-    applyCursorOverlay();
-    SettingsWindow::Sync();
+    overlay_.setEnabled(settings_.globalEnabled());
 }
 
 void MainWindow::showSettings()
@@ -465,6 +477,7 @@ void MainWindow::toggleWindow(HWND ghost)
     std::wstring key = it->second.disableKey();
     settings_.setManaged(key, !settings_.isManaged(key));
     engine_.refreshAll();
+    overlay_.refresh();   // an AnyDesk window switched under the cursor
     InvalidateRect(list_, nullptr, FALSE);
 }
 
@@ -515,18 +528,14 @@ void MainWindow::showTrayMenu()
     if (engine_.tracked().empty()) {
         AppendMenuW(m, MF_STRING | MF_GRAYED, 0, loc::t(IDS_MENU_NOWINDOWS));
     } else {
-        for (auto& kv : engine_.tracked()) {
+        for (auto& r : sortedRows()) {
             UINT id = IDM_WIN_BASE + (UINT)menuWindows_.size();
-            menuWindows_.push_back(kv.first);
-            std::wstring label = RowLabel(kv.second);
-            bool managed = settings_.isManaged(kv.second.disableKey());
-            AppendMenuW(m, MF_STRING | (managed ? MF_CHECKED : 0), id, label.c_str());
+            menuWindows_.push_back(r.second);
+            bool managed = settings_.isManaged(engine_.tracked().at(r.second).disableKey());
+            AppendMenuW(m, MF_STRING | (managed ? MF_CHECKED : 0), id, r.first.c_str());
         }
     }
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    const bool cursorOn = settings_.cursorOverlayEnabled();
-    AppendMenuW(m, MF_STRING | (cursorOn ? MF_CHECKED : 0) | (on ? 0 : MF_GRAYED), IDM_CURSOR,
-                loc::t(IDS_CURSOR_ENLARGE));
     AppendMenuW(m, MF_STRING, IDM_SETTINGS, loc::t(IDS_MENU_SETTINGS));
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, IDM_INFO, loc::t(IDS_MENU_INFO));
@@ -541,7 +550,6 @@ void MainWindow::showTrayMenu()
     else if (cmd == IDM_ACTIVE) setGlobalEnabled(!on);
     else if (cmd == IDM_INFO) InfoWindow::Show(inst_, hwnd_, theme_, dpi_);
     else if (cmd == IDM_SETTINGS) showSettings();
-    else if (cmd == IDM_CURSOR) setCursorOverlayEnabled(!cursorOn);
     else if (cmd == IDM_QUIT) { reallyExit_ = true; DestroyWindow(hwnd_); }
     else if (cmd >= IDM_WIN_BASE) {
         size_t i = cmd - IDM_WIN_BASE;

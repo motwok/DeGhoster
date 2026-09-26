@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Fönster (Program)"
     IDS_HOOK_MISSING    "En nödvändig DeGhoster-komponent saknas, så spökfönster kan inte åtgärdas. Installera om DeGhoster."
     IDS_MENU_SETTINGS    "Inställningar…"
-    IDS_CURSOR_ENLARGE   "Förstora AnyDesk-pekaren"
     IDS_SETTINGS_TITLE   "DeGhoster-inställningar"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk-pekare"
     IDS_SETTINGS_ZOOM    "Zoom"

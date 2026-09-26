@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Fenster (Programm)"
     IDS_HOOK_MISSING    "Eine erforderliche DeGhoster-Komponente fehlt, daher können Geisterfenster nicht behoben werden. Bitte neu installieren."
     IDS_MENU_SETTINGS    "Einstellungen…"
-    IDS_CURSOR_ENLARGE   "AnyDesk-Mauszeiger vergrößern"
     IDS_SETTINGS_TITLE   "DeGhoster-Einstellungen"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk-Mauszeiger"
     IDS_SETTINGS_ZOOM    "Zoom"

@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "חלון (קובץ הפעלה)"
     IDS_HOOK_MISSING    "חסר רכיב נדרש של DeGhoster, ולכן לא ניתן לתקן חלונות רפאים. נא להתקין את DeGhoster מחדש."
     IDS_MENU_SETTINGS    "הגדרות…"
-    IDS_CURSOR_ENLARGE   "הגדלת סמן AnyDesk"
     IDS_SETTINGS_TITLE   "הגדרות DeGhoster"
     IDS_SETTINGS_CURSOR_SECTION "סמן AnyDesk"
     IDS_SETTINGS_ZOOM    "זום"

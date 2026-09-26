@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "視窗（可執行檔）"
     IDS_HOOK_MISSING    "缺少必要的 DeGhoster 元件，無法修復幽靈視窗。請重新安裝 DeGhoster。"
     IDS_MENU_SETTINGS    "設定…"
-    IDS_CURSOR_ENLARGE   "放大 AnyDesk 游標"
     IDS_SETTINGS_TITLE   "DeGhoster 設定"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk 游標"
     IDS_SETTINGS_ZOOM    "縮放"

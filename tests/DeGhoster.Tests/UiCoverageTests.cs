@@ -17,7 +17,7 @@ public class UiCoverageTests
     private const uint WM_COMMAND = 0x0111, WM_CLOSE = 0x0010;
     private const uint WM_MOUSEMOVE = 0x0200, WM_MOUSELEAVE = 0x02A3;
     private const uint WM_TRAY = 0x8040 /* WM_APP+0x40 */, WM_RBUTTONUP = 0x0205;
-    private const byte VK_RETURN = 0x0D, VK_ESCAPE = 0x1B, VK_DOWN = 0x28, VK_UP = 0x26;
+    private const byte VK_RETURN = 0x0D, VK_ESCAPE = 0x1B, VK_DOWN = 0x28;
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002, MOUSEEVENTF_LEFTUP = 0x0004;
     private const int IDC_LIST = 1001, IDC_POWER = 1002, IDC_INFO = 1003, IDC_EXIT = 1004;
@@ -170,46 +170,6 @@ public class UiCoverageTests
     }
 
     [Fact]
-    public void Tray_menu_toggles_the_AnyDesk_cursor()
-    {
-        using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(TestSettings.Root, writable: true))
-            key.SetValue("CursorOverlayEnabled", 1, Microsoft.Win32.RegistryValueKind.DWord);
-        var (build, dg, sim, ghost, host) = StartWithGhost("64", null);
-        try
-        {
-            // Same foreground dance as Tray_menu_toggles_a_window. The menu ends in
-            // Enlarge AnyDesk cursor, Settings..., separator, About, Exit, so it is
-            // walked from the bottom: that does not depend on how many windows are
-            // listed above (a real ghost on the machine adds one).
-            bool switched = false;
-            string why = "the tray menu never opened";
-            for (int attempt = 0; attempt < 3 && !switched; attempt++)
-            {
-                if (!ForceForeground(host)) { why = "could not put DeGhoster in the foreground"; continue; }
-                SetCursorPos(500, 500);
-                PostMessage(host, WM_TRAY, IntPtr.Zero, (IntPtr)WM_RBUTTONUP);
-                Thread.Sleep(600);
-                if (FindWindowEx(IntPtr.Zero, IntPtr.Zero, "#32768", null) == IntPtr.Zero) continue;
-
-                for (int i = 0; i < 4; i++) { Key(VK_UP); Thread.Sleep(90); }
-                Key(VK_RETURN);
-
-                why = "the tray menu entry did not switch the AnyDesk cursor off";
-                switched = WaitUntil(() => OverlayEnabled() == 0, TimeSpan.FromSeconds(6));
-                if (!switched) { Key(VK_ESCAPE); Thread.Sleep(300); }
-            }
-            Assert.True(switched, why);
-        }
-        finally { Cleanup(dg, sim); }
-    }
-
-    private static int OverlayEnabled()
-    {
-        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(TestSettings.Root);
-        return key?.GetValue("CursorOverlayEnabled") is int v ? v : -1;
-    }
-
-    [Fact]
     public void Taskbar_flag_starts_hidden_but_still_cloaks()
     {
         // Autostart launches with --taskbar: the engine must run (the ghost is
@@ -242,7 +202,10 @@ public class UiCoverageTests
     {
         string build = FindBuildDir();
         EnsureGlobalEnabled();
-        string title = "DGHUI-" + Guid.NewGuid().ToString("N");
+        // "!" sorts before digits and letters, so this ghost is the first list row
+        // even when the machine has windows of its own listed (a real AnyDesk
+        // session, "1 234 567 890 - AnyDesk", would otherwise come first).
+        string title = "!DGHUI-" + Guid.NewGuid().ToString("N");
         Process sim = Start(Path.Combine(build, $"GhostSim{bits}.exe"), $"--title \"{title}\" --timeout 90", build, null);
         IntPtr ghost = WaitFor(() => FindWindowEx(IntPtr.Zero, IntPtr.Zero, GhostClass, title), TimeSpan.FromSeconds(8));
         Assert.True(ghost != IntPtr.Zero, "ghost window not found");

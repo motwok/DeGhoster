@@ -156,7 +156,8 @@ Integration tests live in `tests/` and prove the actual neutralization end to en
   system cursors or other windows, click-through, live settings and `--quit`. On a
   desktop without a visible cursor (no mouse attached) those tests are skipped.
 - **`tests/UnitTests`** (native) test the host modules in-process, including the
-  cursor image pipeline, the switch and slider controls and the settings window.
+  cursor image pipeline, the slider control, the settings window and the engine's
+  tracking of AnyDesk windows and hidden ghosts.
 
 Build first, then run the tests:
 

@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Okno (Program)"
     IDS_HOOK_MISSING    "Chýba potrebný komponent DeGhoster, takže okná duchov nemožno opraviť. Preinštalujte prosím DeGhoster."
     IDS_MENU_SETTINGS    "Nastavenia…"
-    IDS_CURSOR_ENLARGE   "Zväčšiť kurzor AnyDesk"
     IDS_SETTINGS_TITLE   "Nastavenia DeGhoster"
     IDS_SETTINGS_CURSOR_SECTION "Kurzor AnyDesk"
     IDS_SETTINGS_ZOOM    "Zväčšenie"

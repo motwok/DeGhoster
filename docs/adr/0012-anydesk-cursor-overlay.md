@@ -50,8 +50,13 @@ cases that can be detected precisely and mitigated reversibly. This is one.
 6. **The small original is hidden with `MagShowSystemCursor`** while the overlay is
    shown, and restored whenever it is hidden, on quit, on end-session and on session
    lock (`WTSRegisterSessionNotification`).
-7. **A settings window** is introduced for the on/off switch and the zoom slider,
-   instead of more tray submenus; it is the place for future settings as well.
+7. **Every AnyDesk window is a case of its own**, exactly like a ghost window: a row
+   with the eye switch in the status list, a tray entry, counted in the title, opted
+   out per window with the same `<ExePath>|<WindowTitle>` key. There is no separate
+   feature switch; the global power button and the per-window eyes cover it, and
+   several AnyDesk windows are independent.
+8. **A settings window** is introduced for the zoom slider, instead of more tray
+   submenus; it is the place for future settings as well.
 
 ## Consequences
 
@@ -60,7 +65,7 @@ cases that can be detected precisely and mitigated reversibly. This is one.
   32-bit helper.
 - **+** Works with AnyDesk's 3D rendering on and off, because in both modes AnyDesk
   sets its own Win32 cursor.
-- **+** Reversible and self-healing: switching the feature off removes every effect
+- **+** Reversible and self-healing: switching a window or DeGhoster off removes every effect
   at once, and Windows restores a cursor hidden with `MagShowSystemCursor` by itself
   when the process ends, even after a crash. No UIAccess manifest is needed. The
   Windows Magnifier and the lock screen coexist with it (tested in the POC).

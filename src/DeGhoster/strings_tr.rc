@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Pencere (Program)"
     IDS_HOOK_MISSING    "Gerekli bir DeGhoster bileşeni eksik, bu nedenle hayalet pencereler düzeltilemez. Lütfen DeGhoster'ı yeniden kurun."
     IDS_MENU_SETTINGS    "Ayarlar…"
-    IDS_CURSOR_ENLARGE   "AnyDesk imlecini büyüt"
     IDS_SETTINGS_TITLE   "DeGhoster Ayarları"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk imleci"
     IDS_SETTINGS_ZOOM    "Yakınlaştırma"

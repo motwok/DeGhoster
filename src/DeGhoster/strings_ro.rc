@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Fereastră (Executabil)"
     IDS_HOOK_MISSING    "Lipsește o componentă necesară DeGhoster, deci ferestrele fantomă nu pot fi remediate. Reinstalați DeGhoster."
     IDS_MENU_SETTINGS    "Setări…"
-    IDS_CURSOR_ENLARGE   "Mărește cursorul AnyDesk"
     IDS_SETTINGS_TITLE   "Setări DeGhoster"
     IDS_SETTINGS_CURSOR_SECTION "Cursor AnyDesk"
     IDS_SETTINGS_ZOOM    "Zoom"

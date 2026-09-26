@@ -106,7 +106,7 @@ void SettingsWindow::Show(HINSTANCE inst, HWND owner, const Theme& theme, UINT d
     DwmSetWindowAttribute(h, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
     ShowWindow(h, SW_SHOW);
     UpdateWindow(h);
-    SetFocus(IsWindowEnabled(self->toggle_) ? self->toggle_ : self->close_);
+    SetFocus(IsWindowEnabled(self->zoom_) ? self->zoom_ : self->close_);
 }
 
 LRESULT CALLBACK SettingsWindow::WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
@@ -142,7 +142,7 @@ void SettingsWindow::applyDpiAssets()
     titleFont_ = CreateFontW(-MulDiv(11, dpi_, 72), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-    for (HWND c : { toggle_, zoom_, close_ })
+    for (HWND c : { zoom_, close_ })
         if (c) SendMessageW(c, WM_SETFONT, (WPARAM)uiFont_, TRUE);
 }
 
@@ -150,8 +150,7 @@ void SettingsWindow::applyTheme()
 {
     if (brush_) DeleteObject(brush_);
     brush_ = CreateSolidBrush(theme_.back);
-    for (HWND c : { toggle_, zoom_ })
-        if (c) SendMessageW(c, ui::CTL_SETTHEME, 0, (LPARAM)&theme_);
+    if (zoom_) SendMessageW(zoom_, ui::CTL_SETTHEME, 0, (LPARAM)&theme_);
     if (hwnd_) {
         ApplyDarkTitleBar(hwnd_, theme_.dark);
         InvalidateRect(hwnd_, nullptr, TRUE);
@@ -169,13 +168,12 @@ SIZE SettingsWindow::measure()
         return SIZE{ r.right - r.left, r.bottom - r.top };
     };
     const SIZE section = extent(titleFont_, loc::t(IDS_SETTINGS_CURSOR_SECTION));
-    const SIZE toggle  = extent(uiFont_, loc::t(IDS_CURSOR_ENLARGE));
     const SIZE zoom    = extent(uiFont_, loc::t(IDS_SETTINGS_ZOOM));
     const SIZE close   = extent(uiFont_, loc::t(IDS_SETTINGS_CLOSE));
 
     // The content grows with long translations, but never past the monitor.
     const int pad = S(24);
-    int content = std::max({ S(380), (int)section.cx, S(40 + 3 + 10 + 12) + (int)toggle.cx, (int)zoom.cx });
+    int content = std::max({ S(380), (int)section.cx, (int)zoom.cx });
     MONITORINFO mi{ sizeof(mi) };
     GetMonitorInfoW(MonitorFromWindow(hwnd_ ? hwnd_ : owner_, MONITOR_DEFAULTTONEAREST), &mi);
     content = std::min(content, (int)(mi.rcWork.right - mi.rcWork.left) - 2 * pad - S(40));
@@ -183,9 +181,6 @@ SIZE SettingsWindow::measure()
     int y = S(20);
     rcSection_ = { pad, y, pad + content, y + section.cy };
     y += section.cy + S(12);
-    const int toggleH = std::max(S(32), (int)toggle.cy + S(8));
-    rcToggle_ = { pad, y, pad + content, y + toggleH };
-    y += toggleH + S(12);
     rcZoomLabel_ = { pad, y, pad + content, y + zoom.cy };
     y += zoom.cy + S(4);
     rcZoom_ = { pad, y, pad + content, y + S(32) };
@@ -211,7 +206,6 @@ void SettingsWindow::layout()
     auto move = [](HWND c, const RECT& r) {
         if (c) MoveWindow(c, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE);
     };
-    move(toggle_, rcToggle_);
     move(zoom_, rcZoom_);
     move(close_, rcClose_);
 }
@@ -219,9 +213,6 @@ void SettingsWindow::layout()
 void SettingsWindow::createControls()
 {
     HINSTANCE inst = (HINSTANCE)GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE);
-    toggle_ = CreateWindowExW(0, ui::kToggleClass, loc::t(IDS_CURSOR_ENLARGE),
-                              WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 0, 0,
-                              hwnd_, (HMENU)(UINT_PTR)IDC_CURSOR_TOGGLE, inst, nullptr);
     zoom_ = CreateWindowExW(0, ui::kSliderClass, loc::t(IDS_SETTINGS_ZOOM),
                             WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 0, 0,
                             hwnd_, (HMENU)(UINT_PTR)IDC_CURSOR_ZOOM, inst, nullptr);
@@ -240,13 +231,11 @@ void SettingsWindow::createControls()
 void SettingsWindow::sync()
 {
     const bool global = settings_.globalEnabled();
-    const bool on = settings_.cursorOverlayEnabled();
-    SendMessageW(toggle_, BM_SETCHECK, on ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(zoom_, ui::SLM_SETPOS, settings_.cursorOverlayZoom(), 0);
-    // Global off greys out the whole section; feature off only the zoom.
+    // Global off greys out the section. Each AnyDesk window is switched on and
+    // off with its own eye in the status list, like every other case.
     HWND focus = GetFocus();
-    EnableWindow(toggle_, global);
-    EnableWindow(zoom_, global && on);
+    EnableWindow(zoom_, global);
     if (focus && !IsWindowEnabled(focus)) SetFocus(close_);
     InvalidateRect(hwnd_, &rcZoomLabel_, TRUE);
 }
@@ -350,11 +339,6 @@ LRESULT SettingsWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_COMMAND:
         switch (LOWORD(wp)) {
-        case IDC_CURSOR_TOGGLE:
-            settings_.setCursorOverlayEnabled(SendMessageW(toggle_, BM_GETCHECK, 0, 0) == BST_CHECKED);
-            sync();
-            SendMessageW(owner_, WM_SETTINGS_CHANGED, 0, 0);
-            return 0;
         case IDC_CLOSE:
         case IDOK:
         case IDCANCEL:   // Esc, via IsDialogMessage

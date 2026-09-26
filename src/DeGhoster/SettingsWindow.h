@@ -27,7 +27,7 @@
 class SettingsWindow {
 public:
     static constexpr UINT WM_SETTINGS_CHANGED = WM_APP + 0x42;   // sent to the owner
-    enum { IDC_CURSOR_TOGGLE = 1101, IDC_CURSOR_ZOOM, IDC_CLOSE };
+    enum { IDC_CURSOR_ZOOM = 1102, IDC_CLOSE };
 
     // `settings` must outlive the window (it is the owner's own object).
     static void Show(HINSTANCE, HWND owner, const Theme&, UINT dpi, Settings& settings);
@@ -52,14 +52,14 @@ private:
 
     Settings& settings_;
     HWND hwnd_ = nullptr, owner_ = nullptr;
-    HWND toggle_ = nullptr, zoom_ = nullptr, close_ = nullptr;
+    HWND zoom_ = nullptr, close_ = nullptr;
     HFONT uiFont_ = nullptr, titleFont_ = nullptr;
     HBRUSH brush_ = nullptr;
     Theme theme_;
     UINT dpi_ = 96;
 
     // Layout (client coordinates), computed by measure().
-    RECT rcSection_{}, rcToggle_{}, rcZoomLabel_{}, rcZoom_{}, rcHint_{}, rcClose_{};
+    RECT rcSection_{}, rcZoomLabel_{}, rcZoom_{}, rcHint_{}, rcClose_{};
 
     static HWND s_active;
 };

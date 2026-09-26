@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Venster (Uitvoerbaar bestand)"
     IDS_HOOK_MISSING    "Een vereist DeGhoster-onderdeel ontbreekt, dus spookvensters kunnen niet worden verholpen. Installeer DeGhoster opnieuw."
     IDS_MENU_SETTINGS    "Instellingen…"
-    IDS_CURSOR_ENLARGE   "AnyDesk-cursor vergroten"
     IDS_SETTINGS_TITLE   "DeGhoster-instellingen"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk-cursor"
     IDS_SETTINGS_ZOOM    "Zoom"

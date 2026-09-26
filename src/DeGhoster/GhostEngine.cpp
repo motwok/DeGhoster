@@ -18,6 +18,7 @@
 #include "GhostEngine.h"
 #include "Settings.h"
 #include "ProcessUtil.h"
+#include "CursorOverlay.h"   // IsAnyDeskClass
 
 #include <dwmapi.h>          // must precede Hook.h: DWMWA_CLOAKED is an SDK enum here
 #include "Hook.h"            // DGH_CLOAK / DGH_UNCLOAK
@@ -34,9 +35,11 @@ constexpr wchar_t kTargetClass[] = L"Chrome_WidgetWin_1";
 // `ignoreCloak` skips the not-cloaked test so an already-fixed window can still be
 // re-validated: it is cloaked precisely because we cloaked it, and testing that bit
 // would report every window we fixed as "no longer a ghost" the moment we fixed it.
-bool IsBlocker(HWND h, bool ignoreCloak = false)
+// `ignoreVisible` does the same for visibility: a ghost its app hid (minimized)
+// is still the same ghost and stays tracked until it is destroyed.
+bool IsBlocker(HWND h, bool ignoreCloak = false, bool ignoreVisible = false)
 {
-    if (!IsWindowVisible(h)) return false;
+    if (!ignoreVisible && !IsWindowVisible(h)) return false;
     LONG ex = GetWindowLongW(h, GWL_EXSTYLE);
     if (!(ex & WS_EX_LAYERED) || (ex & WS_EX_TRANSPARENT)) return false;
 
@@ -60,6 +63,15 @@ bool IsBlocker(HWND h, bool ignoreCloak = false)
             return false;
     }
     return true;
+}
+
+// A visible top-level AnyDesk session window: the second case, whose remote
+// cursor CursorOverlay enlarges. Nothing is injected into it.
+bool IsAnyDeskWindow(HWND h)
+{
+    if (!IsWindowVisible(h) || GetAncestor(h, GA_ROOT) != h) return false;
+    wchar_t cls[64] = L"";
+    return GetClassNameW(h, cls, 64) && CursorOverlay::IsAnyDeskClass(cls);
 }
 
 // A cloak/uncloak request whose reply never arrives (dead hook, hung thread, a
@@ -99,7 +111,8 @@ void GhostEngine::start(HWND host)
 
     EnumWindows([](HWND h, LPARAM) -> BOOL { s_instance->handleCandidate(h); return TRUE; }, 0);
 
-    we1_ = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW, nullptr, winEventThunk,
+    // CREATE..HIDE: HIDE only updates the "hidden" mark of a tracked window.
+    we1_ = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE, nullptr, winEventThunk,
                            0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
     we2_ = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, nullptr, winEventThunk,
                            0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
@@ -158,7 +171,31 @@ void GhostEngine::onWinEvent(DWORD event, HWND hwnd)
         untrack(hwnd);
         return;
     }
+    if (tracked_.count(hwnd)) {
+        if (event == EVENT_OBJECT_SHOW || event == EVENT_OBJECT_HIDE) updateHidden(hwnd);
+        return;
+    }
     handleCandidate(hwnd);
+}
+
+void GhostEngine::updateHidden(HWND h)
+{
+    auto it = tracked_.find(h);
+    if (it == tracked_.end()) return;
+    const bool hidden = !IsWindowVisible(h);
+    if (it->second.hidden == hidden) return;
+    it->second.hidden = hidden;
+    if (listener_) listener_->onTrackedChanged();
+}
+
+const FixInfo* GhostEngine::trackAnyDesk(HWND h)
+{
+    auto it = tracked_.find(h);
+    if (it == tracked_.end()) {
+        handleCandidate(h);   // the cursor can reach a new window before its events do
+        it = tracked_.find(h);
+    }
+    return it != tracked_.end() && it->second.kind == FixInfo::Kind::AnyDesk ? &it->second : nullptr;
 }
 
 bool GhostEngine::isBadPid(DWORD pid)
@@ -174,11 +211,15 @@ bool GhostEngine::isBadPid(DWORD pid)
 
 void GhostEngine::handleCandidate(HWND h)
 {
-    if (tracked_.count(h) || !IsBlocker(h)) return;
-    DWORD pid = 0, tid = GetWindowThreadProcessId(h, &pid);
-    if (!tid || isBadPid(pid)) return;
-
+    if (tracked_.count(h)) return;
     FixInfo fi;
+    if (IsBlocker(h)) fi.kind = FixInfo::Kind::Ghost;
+    else if (IsAnyDeskWindow(h)) fi.kind = FixInfo::Kind::AnyDesk;
+    else return;
+
+    DWORD pid = 0, tid = GetWindowThreadProcessId(h, &pid);
+    if (!tid || (fi.kind == FixInfo::Kind::Ghost && isBadPid(pid))) return;
+
     fi.pid = pid;
     fi.title = proc::WindowTitle(h);
     proc::ResolveHostExe(pid, fi.exeName, fi.exePath);
@@ -195,7 +236,8 @@ bool GhostEngine::desiredCloaked(const FixInfo& fi, HWND h) const
 void GhostEngine::reconcile(HWND h)
 {
     auto it = tracked_.find(h);
-    if (it == tracked_.end()) return;
+    // AnyDesk windows are never touched; the overlay asks for their state itself.
+    if (it == tracked_.end() || it->second.kind != FixInfo::Kind::Ghost) return;
 
     bool desired = desiredCloaked(it->second, h);
     bool isCloaked = cloaked_.count(h) != 0;
@@ -244,14 +286,22 @@ void GhostEngine::tick()
     // a window that stops being a ghost (alpha back to 255, layering dropped) would
     // stay tracked and cloaked forever. No win-event covers those changes, which is
     // why this is a sweep rather than an event handler.
-    std::vector<HWND> stale, idle;
+    // Visibility is not part of it: a ghost its app hid stays listed (marked
+    // hidden) until it is destroyed. An AnyDesk window only ends by going away.
+    std::vector<HWND> stale, idle, live;
     for (auto& kv : tracked_) {
         HWND h = kv.first;
-        if (!IsWindow(h) || !IsBlocker(h, /*ignoreCloak*/ true)) { stale.push_back(h); continue; }
-        if (!cloaked_.count(h) && !pending_.count(h)) idle.push_back(h);
+        const bool ghost = kv.second.kind == FixInfo::Kind::Ghost;
+        if (!IsWindow(h) || (ghost && !IsBlocker(h, /*ignoreCloak*/ true, /*ignoreVisible*/ true))) {
+            stale.push_back(h);
+            continue;
+        }
+        live.push_back(h);
+        if (ghost && !cloaked_.count(h) && !pending_.count(h)) idle.push_back(h);
     }
     for (HWND h : stale) untrack(h);
-    for (HWND h : idle)  reconcile(h);   // picks up ready helpers and lapsed cooldowns
+    for (HWND h : live)  updateHidden(h);   // backstop for a missed show/hide event
+    for (HWND h : idle)  reconcile(h);      // picks up ready helpers and lapsed cooldowns
 
     // Detection is otherwise purely event-driven, but the properties that make a
     // window a ghost (alpha, layering) can change without raising any win-event, so

@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "창 (실행 파일)"
     IDS_HOOK_MISSING    "필수 DeGhoster 구성 요소가 없어 고스트 창을 해결할 수 없습니다. DeGhoster를 다시 설치하세요."
     IDS_MENU_SETTINGS    "설정…"
-    IDS_CURSOR_ENLARGE   "AnyDesk 커서 확대"
     IDS_SETTINGS_TITLE   "DeGhoster 설정"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk 커서"
     IDS_SETTINGS_ZOOM    "확대/축소"

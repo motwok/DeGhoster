@@ -100,6 +100,12 @@ void CursorOverlay::setEnabled(bool on)
     else hide();
 }
 
+void CursorOverlay::refresh()
+{
+    if (active()) evaluate(false);
+    else hide();
+}
+
 void CursorOverlay::setZoom(int percent)
 {
     zoom_ = percent;
@@ -169,6 +175,7 @@ void CursorOverlay::evaluate(bool shapeChanged)
     HWND root = under ? GetAncestor(under, GA_ROOT) : nullptr;
     wchar_t cls[64] = L"";
     if (!root || !GetClassNameW(root, cls, ARRAYSIZE(cls)) || !IsAnyDeskClass(cls)) { hide(); return; }
+    if (filter_ && !filter_(root)) { hide(); return; }
 
     const UINT dpi = DpiAt(pt);
     const bool newShape = shapeChanged || ci.hCursor != shownCursor_;

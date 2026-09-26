@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "Παράθυρο (Εκτελέσιμο)"
     IDS_HOOK_MISSING    "Λείπει ένα απαιτούμενο στοιχείο του DeGhoster, οπότε τα παράθυρα-φαντάσματα δεν μπορούν να διορθωθούν. Επανεγκαταστήστε το."
     IDS_MENU_SETTINGS    "Ρυθμίσεις…"
-    IDS_CURSOR_ENLARGE   "Μεγέθυνση δρομέα AnyDesk"
     IDS_SETTINGS_TITLE   "Ρυθμίσεις DeGhoster"
     IDS_SETTINGS_CURSOR_SECTION "Δρομέας AnyDesk"
     IDS_SETTINGS_ZOOM    "Μεγέθυνση"

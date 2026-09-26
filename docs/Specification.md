@@ -90,23 +90,28 @@ again. This was confirmed against a real WhatsApp ghost, and a plain
 
 | Set | Meaning |
 |---|---|
-| tracked | every live ghost window currently listed |
-| cloaked | tracked windows currently neutralized by us |
-| disabled | per-window opt-out, key `<ExePath>\|<WindowTitle>` |
+| tracked | every live window of every case currently listed: ghosts and AnyDesk session windows (section 10) |
+| cloaked | tracked ghosts currently neutralized by us |
+| disabled | per-window opt-out, key `<ExePath>\|<WindowTitle>`, for every case alike |
 | global enabled | master switch |
 
-**Reconcile rule** per window: neutralize ⇔ `globalEnabled && managed &&
-windowAlive`, where `managed = key ∉ disabled`.
+**Reconcile rule** per window: act ⇔ `globalEnabled && managed && windowAlive`, where
+`managed = key ∉ disabled`. For a ghost, acting means cloaking it; for an AnyDesk
+window it means enlarging its remote cursor.
 
 - **Global off** disables only the *action*. Detection keeps running and the list
   stays; entries vanish only when the window closes.
 - **Per-window off** releases that window but keeps it listed.
+- **Hidden windows stay listed.** A ghost its app hides (e.g. when the app is
+  minimized) stays in the list, shown greyed out, until the window is destroyed or
+  stops being a ghost. It stays neutralized meanwhile.
+- The title count `N Ghosts` counts every listed window of every case.
 
 ## 5. Persistence
 
 Choices survive restarts, per user (`HKCU`): the master switch, the set of
 per-window opt-outs (keyed by full executable path + window title) and the AnyDesk
-cursor settings (section 10.7). See
+cursor zoom (section 10.7). See
 [Architecture.md](Architecture.md#persistence-registry) for the exact keys.
 
 ## 6. Autostart
@@ -122,10 +127,12 @@ so sign-in is unobtrusive; the same switch works when launching the app directly
 
 - **Tray app.** Left/right click opens the context menu; double-click opens the
   status window (the bold "Status Window" entry = default action).
-- **Menu:** status window · Active/Inactive · one entry per detected window (toggles
-  it) · Enlarge AnyDesk cursor (check item) · Settings… · Info · Quit.
+- **Menu:** status window · Active/Inactive · one entry per detected window (ghosts
+  and AnyDesk windows; toggles it) · Settings… · Info · Quit. The window entries are
+  in the same order as the status list.
 - **Status window:** title `DeGhoster — N Ghosts`; a list of detected windows
-  (`Title (exe)`), each with a per-window **eye switch** shown the same way as the
+  (`Title (exe)`, sorted by that label; hidden ghosts greyed out), each with a
+  per-window **eye switch** shown the same way as the
   global power switch — a green circle with an open eye when managed, a grey circle
   with a crossed-out eye when ignored; toolbar with power (green/grey), settings
   (gear, left of info), info, quit.
@@ -191,7 +198,7 @@ hotspot. The small original cursor is hidden while the copy is shown.
 
 ```mermaid
 flowchart LR
-    E[Cursor event<br/>move / shape / show / hide] --> C{Over an AnyDesk window<br/>and non-system cursor?}
+    E[Cursor event<br/>move / shape / show / hide] --> C{Over an AnyDesk window<br/>that is switched on,<br/>non-system cursor?}
     C -- no --> H[Hide overlay<br/>show system cursor]
     C -- yes --> R{Cursor handle, zoom<br/>or DPI changed?}
     R -- yes --> B[Read cursor image<br/>outline · scale] --> U[UpdateLayeredWindow]
@@ -202,10 +209,18 @@ flowchart LR
 
 ### 10.4 Behaviour
 
+**AnyDesk windows are cases like ghosts.** Every visible top-level window of class
+`ad_win` (see step 3 below) is tracked like a ghost window (section 4): its own row in
+the status list with the eye switch, its own tray entry, counted in the title, opted
+out per window with the key `<ExePath>|<WindowTitle>` (the title carries the remote
+ID, so switching off applies per remote). Several AnyDesk windows are independent.
+Nothing is done to the window itself; the eye decides whether its remote cursor is
+enlarged.
+
 **Activation.** On every cursor event the overlay is shown only if **all** hold,
 otherwise it is hidden:
 
-1. The feature is enabled and the global switch is on.
+1. The global switch is on.
 2. `GetCursorInfo` reports a cursor handle, and the cursor is showing. While
    DeGhoster hides the cursor itself (below), its own hiding does not count, so the
    overlay does not switch itself off; hiding by anyone else (e.g. the Windows
@@ -218,6 +233,7 @@ otherwise it is hidden:
 4. The cursor handle is **not** a system cursor (the set of `LoadCursor(NULL,
    IDC_*)` handles for all standard IDs). This keeps the overlay away from AnyDesk's
    own title bar, tabs, menus and settings pages, which use system cursors.
+5. That AnyDesk window is switched on (its eye in the status list).
 
 **Reading the cursor image.** `GetIconInfo` gives the hotspot, colour bitmap and mask;
 pixels are read as top-down 32-bit BGRA with `GetDIBits`:
@@ -255,8 +271,11 @@ taskbar), shown with `SW_SHOWNOACTIVATE`.
 cursor is hidden with the Magnification API, without injection or UIAccess:
 `MagInitialize` lazily on first use, `MagShowSystemCursor(FALSE)` when the overlay
 appears and `MagShowSystemCursor(TRUE)` when it disappears (only on a state change),
-`MagUninitialize` on exit. The cursor is always restored when the feature or global
-switch is turned off, on quit, on end-session and on session lock
+`MagUninitialize` on exit. After every shape change while it is hidden, the cursor is
+shown and hidden again back to back: a cursor AnyDesk sets while the real one is
+hidden can otherwise stay frozen on screen (seen with a Mac remote's resize cursors).
+The cursor is always restored when the window or the global switch is turned off, on
+quit, on end-session and on session lock
 (`WTSRegisterSessionNotification`); after unlock the state is re-evaluated on the
 next cursor event. If DeGhoster is killed, Windows restores the cursor itself.
 
@@ -269,8 +288,8 @@ because events are asynchronous and coalesced. Rendering stays cheap on this pat
 
 ### 10.5 Lifecycle
 
-The overlay is hidden and the cursor restored immediately when the feature or the
-global switch is turned off, the cursor leaves AnyDesk, AnyDesk ends, the session is
+The overlay is hidden and the cursor restored immediately when the AnyDesk window or
+the global switch is turned off, the cursor leaves AnyDesk, AnyDesk ends, the session is
 locked or DeGhoster shuts down (`--quit`, end-session). *z* does not depend on the
 monitor DPI; only the outline radius does. With no AnyDesk running, the cost is the
 event subscription alone.
@@ -282,20 +301,19 @@ button in the status window. Single instance (opening it again brings it to the
 front); same owner-drawn look as the status and About windows (light/dark,
 `DEGHOSTER_FORCE_THEME`), per-monitor DPI, RTL layout for RTL languages. Changes
 apply and are saved immediately; **Close**, `Esc` and the caption close button close
-it; `Tab`/`Shift+Tab` move through the controls with a visible focus indicator;
-`Space` toggles. `--quit` and end-session close it without prompts. It is built in
-sections so further settings can be added later.
+it; `Tab`/`Shift+Tab` move through the controls with a visible focus indicator.
+`--quit` and end-session close it without prompts. It is built in sections so
+further settings can be added later. It holds no on/off switch for a case: those are
+the per-window eyes and the global power button.
 
 Section **AnyDesk cursor**:
 
 | Control | Behaviour |
 |---|---|
-| **Enlarge AnyDesk cursor** (on/off switch) | Enables or disables the feature. |
-| **Zoom** slider with value label ("250 %") | 100 … 600 %, step 10 %; arrows ±10 %, PgUp/PgDn ±50 %, Home/End = limits; applies live; disabled while the feature is off. |
+| **Zoom** slider with value label ("250 %") | 100 … 600 %, step 10 %; arrows ±10 %, PgUp/PgDn ±50 %, Home/End = limits; applies live. |
 | Hint | Enlarging the pointer on the remote computer gives a sharper cursor. |
 
-While the global switch is off, the switch, the slider and the tray check item are
-greyed out.
+While the global switch is off, the slider is greyed out.
 
 ### 10.7 Persistence
 
@@ -303,8 +321,9 @@ Under `HKCU\Software\DeGhoster` (honouring `DEGHOSTER_SETTINGS_ROOT`):
 
 | Value | Type | Meaning | Default |
 |---|---|---|---|
-| `CursorOverlayEnabled` | DWORD | 0/1 | 1 |
 | `CursorOverlayZoom` | DWORD | zoom in percent, 100 … 600 | primary monitor scaling |
+
+Switched-off AnyDesk windows are stored like switched-off ghosts, under `Disabled`.
 
 No files on disk; no registry writes outside DeGhoster's own key; no change to cursor
 schemes, no `SetSystemCursor`.
@@ -314,7 +333,9 @@ schemes, no `SetSystemCursor`.
 1. With a suitable zoom, the remote arrow at 250 % appears as large as the local
    cursor, for a Windows and a macOS remote.
 2. Shape changes are visible without noticeable delay.
-3. No click, drag or text-field focus behaves differently with the feature on vs. off.
-4. The overlay never appears over AnyDesk's own UI or outside AnyDesk.
-5. Turning the feature off removes all visible effects immediately; nothing remains
-   in the system besides the two registry values.
+3. No click, drag or text-field focus behaves differently with a window on vs. off.
+4. The overlay never appears over AnyDesk's own UI, outside AnyDesk or over an
+   AnyDesk window that is switched off.
+5. Switching a window or DeGhoster off removes all visible effects immediately;
+   nothing remains in the system besides DeGhoster's own registry values.
+6. Every AnyDesk window is listed, counted and switched on and off on its own.

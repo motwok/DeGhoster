@@ -38,7 +38,6 @@ BEGIN
     IDS_COL_WINDOW      "ウィンドウ (実行ファイル)"
     IDS_HOOK_MISSING    "DeGhoster に必要なコンポーネントがないため、ゴーストウィンドウを修正できません。再インストールしてください。"
     IDS_MENU_SETTINGS    "設定…"
-    IDS_CURSOR_ENLARGE   "AnyDesk のカーソルを拡大"
     IDS_SETTINGS_TITLE   "DeGhoster の設定"
     IDS_SETTINGS_CURSOR_SECTION "AnyDesk のカーソル"
     IDS_SETTINGS_ZOOM    "拡大率"
