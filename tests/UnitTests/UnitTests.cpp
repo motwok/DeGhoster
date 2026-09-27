@@ -258,6 +258,8 @@ static void CursorImageTests()
         Check(VisibleHeight(img) == 0, "an empty picture has no visible height");
         img.px[1 * 2] = 0xFF000000u; img.px[3 * 2 + 1] = 0x80000000u;
         Check(VisibleHeight(img) == 3, "visible height spans the first to the last visible row");
+        img.px[4 * 2] = 0x40000000u;   // a soft shadow row below
+        Check(VisibleHeight(img) == 3, "pixels under 50 % opacity (shadows) do not count");
         Image same = img, other = img;
         other.px[1 * 2] = 0xFF010101u;
         Check(Key(img) == Key(same) && Key(img) != Key(other), "equal pictures share a key, different ones do not");

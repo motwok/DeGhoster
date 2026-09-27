@@ -183,7 +183,7 @@ public class CursorOverlayTests
 
     private static int Height(IntPtr h) => Rect(h).bottom - Rect(h).top;
 
-    // The local arrow's height on screen: the visible rows of the system arrow's
+    // The local arrow's height on screen: the visible rows (at least 50 % opaque) of the system arrow's
     // picture (as a per-monitor aware thread gets it) times DPI/96. The standard
     // arrows have an alpha channel; a monochrome scheme is counted by its AND mask.
     private static int LocalArrowHeight(uint dpi)
@@ -206,7 +206,7 @@ public class CursorOverlayTests
                 for (int x = 0; x < w; x++)
                 {
                     int p = px[y * w + x];
-                    bool visible = color ? ((uint)p >> 24) != 0 : (p & 0xFFFFFF) == 0;
+                    bool visible = color ? ((uint)p >> 24) >= 128 : (p & 0xFFFFFF) == 0;
                     if (visible) { if (top < 0) top = y; bottom = y; break; }
                 }
             return top < 0 ? 0 : (bottom - top + 1) * (int)dpi / 96;

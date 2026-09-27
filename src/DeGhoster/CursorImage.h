@@ -56,8 +56,11 @@ int OutlineRadius(UINT dpi);
 // The hotspot is scaled the same way.
 Image Scale(const Image& src, int zoomPercent);
 
-// Height of the visible part (rows with any non-transparent pixel), 0 if none.
+// Height of the visible part: the rows with a pixel of at least 50 % opacity, 0 if
+// none. The threshold leaves out soft drop shadows (a Mac arrow's shadow adds a
+// third to its height), which would otherwise make that cursor look too tall.
 int VisibleHeight(const Image& img);
+constexpr uint32_t kVisibleAlpha = 128;
 
 // A fingerprint of the picture (size, hotspot, pixels). Cursor handles cannot
 // tell shapes apart: AnyDesk destroys cursors and gets the same handle back.

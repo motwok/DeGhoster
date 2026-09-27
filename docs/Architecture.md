@@ -247,7 +247,8 @@ sequenceDiagram
   Auto on, every event credits the time since the previous one (at most 2 s) to the
   picture shown until then, in an `AutoZoom` per AnyDesk root window. The reference
   is the picture with the most time (with a 1.5× hysteresis); the zoom is the local
-  arrow's height — the visible rows of `LoadCursor(IDC_ARROW)`'s picture × DPI/96,
+  arrow's height — the visible rows (≥ 50 % opacity, so drop shadows do not count)
+  of `LoadCursor(IDC_ARROW)`'s picture × DPI/96,
   cached per DPI — divided by the reference's visible height. A zoom change re-renders
   the current picture from the cached source. `AutoZoom` entries of closed windows
   are dropped when a new window is added.

@@ -171,7 +171,7 @@ int VisibleHeight(const Image& img)
     int top = -1, bottom = -1;
     for (int y = 0; y < img.h; ++y)
         for (int x = 0; x < img.w; ++x)
-            if (img.at(x, y) >> 24) {
+            if ((img.at(x, y) >> 24) >= kVisibleAlpha) {
                 if (top < 0) top = y;
                 bottom = y;
                 break;
