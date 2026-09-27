@@ -78,6 +78,12 @@ ULONGLONG HookInjector::threadBornTime(DWORD threadId)
     ULONGLONG born = 0;
     if (GetThreadTimes(t, &create, &exit, &kernel, &user))
         born = ((ULONGLONG)create.dwHighDateTime << 32) | create.dwLowDateTime;
+    // A thread that has exited can still be opened while anyone holds a handle to
+    // it - its own helper does, waiting for exactly that exit - so opening is not
+    // enough to call it alive. (A thread that returned STILL_ACTIVE as its exit
+    // code would be taken for a live one; nothing we hook does that.)
+    DWORD code = 0;
+    if (born && GetExitCodeThread(t, &code) && code != STILL_ACTIVE) born = 0;
     CloseHandle(t);
     return born;
 }
