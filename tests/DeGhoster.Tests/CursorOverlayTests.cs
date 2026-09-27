@@ -10,9 +10,11 @@ using Xunit;
 namespace DeGhoster.Tests;
 
 // The AnyDesk cursor overlay (Specification.md section 10) against CursorSim, a
-// window of AnyDesk's session class that sets its own cursors. These tests move
-// the real mouse cursor. On a desktop without a visible cursor (no mouse
-// attached) there is nothing to enlarge, so the cursor-driven ones are skipped.
+// window of AnyDesk's session class that sets its own cursors. The cursor-driven
+// tests move the real mouse cursor, so they are in the InteractiveInput category:
+// the build server has no visible cursor and filters them out, and
+// tests\coverage.ps1 runs them locally and commits their coverage for the combined
+// report. Anywhere else without a visible cursor they are skipped.
 [Trait("Category", "Integration")]
 public class CursorOverlayTests
 {
@@ -30,6 +32,8 @@ public class CursorOverlayTests
     private const int CURSOR_SHOWING = 1;
 
     [SkippableTheory]
+
+    [Trait("Category", "InteractiveInput")]
     [InlineData("64")]
     [InlineData("32")]   // the real AnyDesk client is a 32-bit process
     public void Overlay_shows_the_enlarged_cursor_at_the_hotspot(string bits)
@@ -46,6 +50,8 @@ public class CursorOverlayTests
     }
 
     [SkippableTheory]
+
+    [Trait("Category", "InteractiveInput")]
     [InlineData("mask")]
     [InlineData("mono")]
     public void Overlay_handles_every_cursor_kind(string kind)
@@ -68,6 +74,8 @@ public class CursorOverlayTests
     }
 
     [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
     public void Overlay_stays_off_over_system_cursors_other_windows_and_outside()
     {
         using var run = Run.Start("64", "alpha", zoom: 300);
@@ -93,6 +101,8 @@ public class CursorOverlayTests
     }
 
     [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
     public void Rapid_shape_changes_keep_the_host_responsive()
     {
         using var run = Run.Start("64", "switch", zoom: 300);
@@ -112,6 +122,8 @@ public class CursorOverlayTests
     }
 
     [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
     public void Global_switch_and_settings_window_control_the_overlay()
     {
         using var run = Run.Start("64", "alpha", zoom: 300);
@@ -151,6 +163,8 @@ public class CursorOverlayTests
     }
 
     [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
     public void Auto_sizes_the_cursor_like_the_local_arrow_and_can_be_switched_off()
     {
         using var run = Run.Start("64", "alpha", zoom: null);   // Auto on
@@ -231,6 +245,8 @@ public class CursorOverlayTests
     [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr h);
 
     [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
     public void Each_AnyDesk_window_has_its_own_eye()
     {
         using var run = Run.Start("64", "alpha", zoom: 300);
@@ -306,6 +322,8 @@ public class CursorOverlayTests
     }
 
     [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
     public void Session_lock_hides_the_overlay_until_unlock()
     {
         using var run = Run.Start("64", "alpha", zoom: 300);
@@ -329,6 +347,8 @@ public class CursorOverlayTests
     }
 
     [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
     public void Clicks_pass_through_the_overlay()
     {
         using var run = Run.Start("64", "alpha", zoom: 400);
@@ -341,6 +361,8 @@ public class CursorOverlayTests
     }
 
     [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
     public void Quit_removes_the_overlay_and_restores_the_cursor()
     {
         using var run = Run.Start("64", "alpha", zoom: 300);

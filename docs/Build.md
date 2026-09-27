@@ -184,15 +184,43 @@ choco install opencppcoverage   # one-time
 .\tests\coverage.ps1            # builds Debug (x86+x64) + runs tests under coverage
 ```
 
-The script makes two measured runs - `build\UnitTests.exe` and the integration
-suite - and merges them, because OpenCppCoverage drives exactly one command per
-invocation. Measuring only the integration tests used to leave everything the
-native unit tests cover out of the numbers.
+The script makes three measured runs - `build\UnitTests.exe`, the integration
+suite the build server runs too, and the **interactive** tests it cannot run - and
+merges them, because OpenCppCoverage drives exactly one command per invocation.
+Measuring only the integration tests used to leave everything the native unit
+tests cover out of the numbers.
 
-The report lands in `coverage\` (Cobertura XML + browsable HTML at
-`coverage\html\index.html`). Coverage counts the C++ code in `src\` executed
-across DeGhoster, the hooks and the helpers. The automated run reaches ~97 % of
-`src\`.
+Coverage counts the C++ code in `src\` executed across DeGhoster, the hooks and
+the helpers.
+
+#### Two reports: CI only, and combined with the local and manual tests
+
+Some tests cannot run on the build server: the ones in the **`InteractiveInput`**
+category need real clicks or a visible mouse cursor (the click-through proof and
+the AnyDesk cursor overlay tests; the runner has no mouse), and the guided run of
+`coverage-manual.ps1` needs a human. Their coverage is recorded **locally** and
+committed, so the CI can count it too:
+
+- `tests\coverage.ps1` writes the interactive tests' result to
+  `tests\coverage-data\local.cobertura.xml`, `coverage-manual.ps1` the manual
+  run's to `manual.cobertura.xml`. `tests\coverage-normalize.ps1` makes them
+  mergeable (repo-relative paths, covered lines only) and stores a
+  `*.fingerprint.json` next to each: the git blob id of every source file measured.
+- `tests\coverage-report.ps1` builds **two reports** with ReportGenerator (a
+  `dotnet tool`, see `.config/dotnet-tools.json`): `report-ci` (the CI's own
+  tests) and `report-combined` (CI + local + manual). Committed results for a file
+  that has **changed since** they were recorded are left out, since their line
+  numbers no longer fit; the script lists those files.
+- The [Coverage](../.github/workflows/coverage.yml) workflow runs it after its own
+  measurement, puts both totals in the **job summary**, and uploads both reports
+  as the `coverage` artifact. Locally, `coverage.ps1` does the same in `coverage\`.
+
+After changing code that the interactive or manual tests exercise, run
+`tests\coverage.ps1` (and, where it matters, `coverage-manual.ps1`) again and
+commit the updated files under `tests\coverage-data`. Keep the mouse still while
+`coverage.ps1` runs: the interactive tests drive the real cursor.
+
+At the time of writing: CI only ≈ 94 %, combined ≈ 96 % of `src\`.
 
 What is deliberately left uncovered needs either a fault injector or a human:
 defensive branches that only run when a Win32 call fails (`OpenProcess`,
@@ -243,8 +271,10 @@ MSI. Release notes for that release are drafted separately by
 ([ADR-0009](adr/0009-automated-release-notes.md)).
 
 A separate [Coverage](../.github/workflows/coverage.yml) workflow builds Debug and
-publishes an OpenCppCoverage report as an artifact on pushes and PRs (informational,
-non-blocking).
+publishes two coverage reports as an artifact on pushes and PRs — the CI's own
+tests, and combined with the committed local and manual results (see
+[Code coverage](#code-coverage)); both totals appear in the job summary
+(informational, non-blocking).
 
 ## Troubleshooting
 

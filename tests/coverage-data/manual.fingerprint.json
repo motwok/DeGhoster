@@ -1,0 +1,20 @@
+{
+    "src/DeGhoster.Helper/Helper.cpp":  "5b50321c84375e6eae04727ee7212d7297ada59b",
+    "src/DeGhoster.Hook/Hook.cpp":  "420a676b805fb562362c60cec4aa3b870b80d96d",
+    "src/DeGhoster/Autostart.cpp":  "739152f2a5d44458ec4fe11194e8cccf2b2b73b0",
+    "src/DeGhoster/FixInfo.h":  "47c11135e20a541da6150f651b465b8e40dcc018",
+    "src/DeGhoster/Gfx.cpp":  "d55d10cd699d8b9713f181df26ac4f1e46e785e3",
+    "src/DeGhoster/Gfx.h":  "6875b129a2ea87ba75869391afc80d520ec68c74",
+    "src/DeGhoster/GhostEngine.cpp":  "581a64383ca78277e781e7c46274a5cbb4e592ae",
+    "src/DeGhoster/GhostEngine.h":  "373e0ce598f2e370463a8ce02ad6acfa05185666",
+    "src/DeGhoster/HookInjector.cpp":  "1afb79c267debd9ddf46a33fad5bd2300c459868",
+    "src/DeGhoster/HoverButton.cpp":  "85cf9359d2b28d0edd43fada5abaae0699565a2b",
+    "src/DeGhoster/InfoWindow.cpp":  "23c94a4c902a87046cdc5dbecb5eff45f950b52f",
+    "src/DeGhoster/Loc.cpp":  "50fce3b66f9f325f8d898b0f2df9ff360e1af230",
+    "src/DeGhoster/main.cpp":  "5d96396646d43a972368b629284d58eeebd733fc",
+    "src/DeGhoster/MainWindow.cpp":  "57e2124f6463c2a25e952929035ba64cf7c8f547",
+    "src/DeGhoster/MainWindow.h":  "61a5b55ddaeef438441019794d8068cf74d60741",
+    "src/DeGhoster/ProcessUtil.cpp":  "ad074100ecf97b7d3376f610e3914efb54a98019",
+    "src/DeGhoster/Settings.cpp":  "4dcac32f30adcb28e6814aa6d93120c190403259",
+    "src/DeGhoster/Theme.cpp":  "677ca3fdf7258f6cedf456f69f9b25e332084a37"
+}
