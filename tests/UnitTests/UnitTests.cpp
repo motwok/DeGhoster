@@ -137,13 +137,22 @@ static void AutoZoomTests()
     az.observe(arrow, 16, t += 300);            // I-beam 300 ms
     Check(az.reference() == arrow, "a picture shown less long does not take over");
     az.observe(ibeam, 20, t += 100000);         // arrow resting: credited 2000 ms only
-    az.observe(arrow, 16, t += 1500);           // I-beam 1800 ms in total
+    az.observe(ibeam, 20, t += 1000);           // I-beam 1000 ms
     Check(az.reference() == arrow, "resting time is capped, so the arrow keeps the lead");
-    for (int i = 0; i < 5; ++i) {               // then lots of text editing
-        az.observe(ibeam, 20, t += 100);
-        az.observe(arrow, 16, t += 2000);
+    for (int i = 0; i < 5; ++i) {               // then text editing
+        az.observe(arrow, 16, t += 2000);       // I-beam 2000 ms
+        az.observe(ibeam, 20, t += 100);        // arrow 100 ms
     }
     Check(az.reference() == ibeam && az.zoom(40) == 200, "a picture shown clearly longer takes over: 40/20 = 200 %");
+
+    // Only the last 10 s count: back to the arrow, it takes over within them.
+    const ULONGLONG back = t;
+    for (int i = 0; i < 5 && az.reference() != arrow; ++i) {
+        az.observe(arrow, 16, t += 100);        // I-beam 100 ms
+        az.observe(ibeam, 20, t += 2000);       // arrow 2000 ms
+    }
+    Check(az.reference() == arrow && t - back <= AutoZoom::kWindowMs,
+          "older time drops out, so the arrow is the reference again within 10 s");
     Check(az.zoom(0) == 0, "no target height: no automatic zoom");
 
     AutoZoom tiny;

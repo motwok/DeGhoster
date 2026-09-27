@@ -80,9 +80,9 @@ cases that can be detected precisely and mitigated reversibly. This is one.
 - **+** The automatic zoom fits every remote at once: AnyDesk shrinks cursors by a
   session-dependent amount (a Mac remote needs about twice the factor of a Windows
   remote), and each window gets its own factor without any setting.
-- **−** The automatic zoom needs a few seconds of use per session to settle, and a
-  session spent mostly in text would make the I-beam the reference (the hysteresis and
-  the 2 s cap per interval keep that rare). Some remotes send the I-beam at its base
+- **−** The automatic zoom looks at the last 10 s only, so it settles quickly but a
+  stretch spent mostly in text makes the I-beam the reference for a while (the
+  hysteresis and the 2 s cap per interval dampen that). Some remotes send the I-beam at its base
   size while the arrow comes enlarged, so one factor per window cannot make every
   shape match. This is documented for users.
 - **−** Two more system libraries (`Magnification.dll`, `Wtsapi32.dll`) and a

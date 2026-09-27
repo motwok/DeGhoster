@@ -251,14 +251,15 @@ pixels are read as top-down 32-bit BGRA with `GetDIBits`:
   on dark backgrounds.
 
 **Zoom — Auto (default).** Per AnyDesk window, DeGhoster measures how long each
-remote cursor picture is on screen (told apart by its pixels, not its handle; one
-interval counts at most 2 s, so a mouse resting on one shape does not outweigh
-real use). The picture shown the longest is the reference — in practice the normal
-arrow — and *z* makes its visible height equal to the local arrow's: the visible
+remote cursor picture was on screen during the **last 10 seconds** (told apart by its
+pixels, not its handle; one interval counts at most 2 s, so a mouse resting on one
+shape does not outweigh real use). The picture shown the longest in that window is
+the reference — in practice the normal arrow — and *z* makes its visible height equal to the local arrow's: the visible
 rows of the system arrow's picture × DPI/96. A row counts as visible when it has a
 pixel of at least 50 % opacity, so soft drop shadows (a Mac arrow's adds about a
 third to its height) do not count. Another picture takes over the reference
-only once it has been shown 1.5 times as long. *z* is clamped to 100 … 600 % on the
+only once it has been shown 1.5 times as long within the window, so the size follows
+a change within about 10 seconds but does not flip between two similar shares. *z* is clamped to 100 … 600 % on the
 10 % grid. Until a window has shown a visible cursor, the fixed zoom applies. Each
 window has its own *z*, so a Mac and a Windows remote get their own factor. Nothing
 of this is stored. No shape recognition is involved (see

@@ -130,8 +130,9 @@ remembered per remote computer. With several AnyDesk windows open, each has its 
 **The size is automatic.** DeGhoster watches which remote cursor is on screen the longest —
 normally the arrow — and makes it exactly as tall as your own mouse pointer. It does that
 for each AnyDesk window separately, so a Mac and a Windows computer both look right at the
-same time, without any setting. It needs a few seconds of normal use in a new session to
-settle.
+same time, without any setting. It looks at the last 10 seconds, so it settles within a
+few seconds of normal use and follows along if that changes (a long stretch of typing
+makes the text cursor the reference for a while).
 
 To use a fixed size instead, open **Settings** — the **gear** button in the status window's
 toolbar, or **Settings…** in the tray menu:

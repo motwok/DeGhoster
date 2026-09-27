@@ -245,8 +245,9 @@ sequenceDiagram
 - **Auto zoom.** The picture of the current cursor is read once per shape
   (`CursorImage::Read`) and fingerprinted (`Key`, since handles get reused). With
   Auto on, every event credits the time since the previous one (at most 2 s) to the
-  picture shown until then, in an `AutoZoom` per AnyDesk root window. The reference
-  is the picture with the most time (with a 1.5× hysteresis); the zoom is the local
+  picture shown until then, in an `AutoZoom` per AnyDesk root window, which keeps
+  these spans for the last 10 s only. The reference is the picture with the most time
+  within them (with a 1.5× hysteresis); the zoom is the local
   arrow's height — the visible rows (≥ 50 % opacity, so drop shadows do not count)
   of `LoadCursor(IDC_ARROW)`'s picture × DPI/96,
   cached per DPI — divided by the reference's visible height. A zoom change re-renders

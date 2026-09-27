@@ -18,17 +18,19 @@
 #pragma once
 #include <windows.h>
 #include <cstdint>
+#include <deque>
 #include <unordered_map>
 
 // The automatic zoom of one AnyDesk window (Specification.md section 10.4). The
-// remote cursor that is shown the longest is taken as the reference - in practice
-// the normal arrow - and the zoom makes it as tall as the local arrow. No shape
-// recognition: only how long each picture is on screen counts.
+// remote cursor that was shown the longest during the last kWindowMs is taken as
+// the reference - in practice the normal arrow - and the zoom makes it as tall as
+// the local arrow. No shape recognition: only how long each picture is on screen
+// counts, and only recently, so the size follows a change within seconds.
 class AutoZoom {
 public:
     // The shown picture changed or stays; `now` in ms (GetTickCount64). The time
     // since the previous call is credited to the picture shown until now, capped
-    // so a mouse resting on one shape for minutes does not outweigh real use.
+    // so a mouse resting on one shape does not outweigh real use.
     void observe(uint64_t key, int visibleHeight, ULONGLONG now);
 
     // Zoom in percent that makes the reference picture `targetHeight` pixels tall,
@@ -38,14 +40,18 @@ public:
     uint64_t reference() const { return ref_; }
 
     static constexpr ULONGLONG kMaxCreditMs = 2000;
+    // Only on-screen time within this span before the latest event counts.
+    static constexpr ULONGLONG kWindowMs = 10000;
     // Another picture takes over the reference only once it has been shown this
-    // much longer, so the size does not flip between two similar shares.
+    // much longer within the window, so the size does not flip between two
+    // similar shares.
     static constexpr double kHysteresis = 1.5;
 
 private:
-    struct Entry { ULONGLONG ms = 0; int height = 0; };
-    std::unordered_map<uint64_t, Entry> seen_;
+    struct Span { uint64_t key; ULONGLONG end, ms; };
+    std::deque<Span> spans_;                       // credited time, oldest first
+    std::unordered_map<uint64_t, int> heights_;    // visible height per picture
     uint64_t cur_ = 0, ref_ = 0;
-    bool haveCur_ = false;
+    bool haveCur_ = false, haveRef_ = false;
     ULONGLONG last_ = 0;
 };
