@@ -18,6 +18,11 @@ around to it, DeGhoster quietly does the tidying for you.
 DeGhoster also fixes a second annoyance: in **AnyDesk** remote sessions on a high-resolution
 screen, the mouse cursor of the remote computer is often **tiny**. DeGhoster shows it in a
 comfortable size instead — see [Enlarging the AnyDesk cursor](#enlarging-the-anydesk-cursor).
+Here, too, the fix really belongs elsewhere: AnyDesk's Windows client should scale the remote
+cursor to your display itself.
+
+Which vendors' defects DeGhoster works around, and what they would need to fix, is listed in
+the README under [Whose bugs are these?](../README.md#whose-bugs-are-these).
 
 ## Downloading and installing
 

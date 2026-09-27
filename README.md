@@ -44,7 +44,8 @@ runtime dependencies**, follows the Windows light/dark theme, and is localized i
 27 languages.
 
 **AnyDesk remote cursor.** On a high-DPI client (e.g. 4K at 250 %), AnyDesk shows
-the remote computer's mouse cursor tiny, and no AnyDesk setting fixes it. DeGhoster
+the remote computer's mouse cursor tiny, and no AnyDesk setting fixes it (see
+[Whose bugs are these?](#whose-bugs-are-these)). DeGhoster
 shows an enlarged copy on top of it while the mouse is over the remote screen and
 hides the small original — a click-through overlay with an adjustable zoom, no
 injection into AnyDesk, nothing changed in AnyDesk or Windows. Switching it off
@@ -56,6 +57,21 @@ over time.
 > This is ultimately a bug in the offending apps — **WhatsApp's desktop app is a
 > recurring example** — they should destroy or cloak their own leftover windows.
 > Until they do, DeGhoster does the tidying for you.
+
+## Whose bugs are these?
+
+DeGhoster only exists because other vendors' software gets these things wrong. To be
+fair and clear about it, here they are by name — with what we actually observed, and
+what it would take to fix it where it belongs. Should a vendor fix its product, the
+matching workaround in DeGhoster becomes unnecessary and will be retired gladly.
+
+| Vendor · product | What goes wrong | What the vendor would need to do |
+|---|---|---|
+| **Meta** · WhatsApp Desktop for Windows (WebView2) | When the app moves to another virtual desktop, it leaves an invisible window behind (`Chrome_WidgetWin_1`, alpha 0, `WS_EX_NOREDIRECTIONBITMAP`) that swallows every click in its area and hides the mouse cursor there. Confirmed against a live WhatsApp ghost window. | Destroy or cloak the leftover window, as any other app does with windows it no longer shows. |
+| **AnyDesk Software GmbH** · AnyDesk client for Windows | On a client with high display scaling, the remote computer's cursor is shown at the already shrunk size AnyDesk sends — not scaled to the local display, as Windows does for its own cursors. No AnyDesk setting changes it, and a larger pointer set on a macOS remote does not come across. | Scale the remote cursor to the local display scaling, or offer a setting for its size. |
+
+Other apps that show the same patterns may join this list once the defect is
+confirmed; nobody is named here on suspicion.
 
 ## Install
 

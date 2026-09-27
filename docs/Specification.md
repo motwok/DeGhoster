@@ -18,8 +18,9 @@ DeGhoster detects such "ghost windows" and neutralizes them so clicks reach the
 desktop again and the cursor is restored.
 
 DeGhoster exists because this is ultimately a defect in the offending applications —
-they should destroy or cloak these leftover windows themselves (WhatsApp's desktop
-app is a recurring example); until they do, DeGhoster is a pragmatic workaround.
+they should destroy or cloak these leftover windows themselves (Meta's WhatsApp
+Desktop for Windows is a confirmed and recurring example); until they do, DeGhoster
+is a pragmatic workaround.
 
 ### 1.1 Scope and outlook
 
@@ -177,6 +178,12 @@ remote machine is tiny in an AnyDesk session:
   arrow ≈ 12×17 px) and Windows does not scale it to the display DPI.
 - Neither an AnyDesk setting nor a DPI compatibility override fixes it; the remote's
   pointer enlargement is transmitted only as a larger source image.
+
+This is a defect in the AnyDesk client for Windows (AnyDesk Software GmbH): it should
+scale the remote cursor to the local display scaling, as Windows does for its own
+cursors, or offer a setting for its size. Until it does, DeGhoster works around it.
+The vendors whose defects DeGhoster works around are listed in the
+[README](../README.md#whose-bugs-are-these).
 
 ### 10.2 Goals and non-goals
 
