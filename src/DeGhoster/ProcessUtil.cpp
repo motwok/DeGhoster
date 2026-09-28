@@ -16,11 +16,93 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #include "ProcessUtil.h"
+#include <appmodel.h>
 #include <tlhelp32.h>
+#include <cwctype>
 #include <unordered_map>
 #include <utility>
+#include <vector>
+
+namespace {
+
+// Position of `needle` in `hay`, ignoring ASCII case; npos if absent.
+size_t FindNoCase(const std::wstring& hay, const std::wstring& needle, size_t from = 0)
+{
+    if (needle.empty() || hay.size() < needle.size()) return std::wstring::npos;
+    for (size_t i = from; i + needle.size() <= hay.size(); ++i)
+        if (_wcsnicmp(hay.c_str() + i, needle.c_str(), needle.size()) == 0) return i;
+    return std::wstring::npos;
+}
+
+// "app-1.0.9187" or "app-2.3.0-beta1": the version folder Squirrel installs into.
+bool IsSquirrelVersionDir(const std::wstring& dir)
+{
+    if (dir.size() < 5 || _wcsnicmp(dir.c_str(), L"app-", 4) != 0) return false;
+    size_t i = 4;
+    bool digit = false;
+    for (; i < dir.size() && dir[i] != L'-'; ++i) {
+        if (iswdigit(dir[i])) { digit = true; continue; }
+        if (dir[i] != L'.' || !digit || i + 1 >= dir.size() || !iswdigit(dir[i + 1])) return false;
+    }
+    if (!digit) return false;
+    if (i == dir.size()) return true;
+    if (++i == dir.size()) return false;   // a bare trailing '-'
+    for (; i < dir.size(); ++i)
+        if (!iswalnum(dir[i]) && dir[i] != L'.') return false;
+    return true;
+}
+
+// Package family name and full name of a packaged process; false for any other.
+bool PackageNames(HANDLE process, std::wstring& family, std::wstring& full)
+{
+    wchar_t fam[PACKAGE_FAMILY_NAME_MAX_LENGTH + 1];
+    wchar_t ful[PACKAGE_FULL_NAME_MAX_LENGTH + 1];
+    UINT32 nf = ARRAYSIZE(fam), nu = ARRAYSIZE(ful);
+    if (GetPackageFamilyName(process, &nf, fam) != ERROR_SUCCESS) return false;
+    if (GetPackageFullName(process, &nu, ful) != ERROR_SUCCESS) return false;
+    family = fam;
+    full = ful;
+    return true;
+}
+
+} // namespace
 
 namespace proc {
+
+std::wstring ProgramKeyFromPath(const std::wstring& path)
+{
+    if (path.empty()) return L"?";
+
+    // Packaged app: the folder is the package full name, whose fields are
+    // separated by '_' (a package name cannot contain one). Keeping only the
+    // name and the publisher id gives the family name, which an update keeps.
+    const std::wstring apps = L"\\WindowsApps\\";
+    const size_t a = FindNoCase(path, apps);
+    if (a != std::wstring::npos) {
+        const size_t s = a + apps.size(), e = path.find(L'\\', s);
+        if (e != std::wstring::npos) {
+            std::vector<std::wstring> f;
+            for (size_t p = s;;) {
+                const size_t u = path.find(L'_', p);
+                if (u == std::wstring::npos || u > e) { f.push_back(path.substr(p, e - p)); break; }
+                f.push_back(path.substr(p, u - p));
+                p = u + 1;
+            }
+            if (f.size() == 5 && !f[0].empty() && !f[1].empty() && !f[4].empty())
+                return f[0] + L"_" + f[4] + path.substr(e);
+        }
+    }
+
+    // Squirrel: <App>\app-<version>\<exe>; every update installs a new folder.
+    const size_t file = path.find_last_of(L'\\');
+    if (file != std::wstring::npos && file > 0) {
+        const size_t dir = path.find_last_of(L'\\', file - 1);
+        const size_t begin = dir == std::wstring::npos ? 0 : dir + 1;
+        if (IsSquirrelVersionDir(path.substr(begin, file - begin)))
+            return path.substr(0, begin) + L"app" + path.substr(file);
+    }
+    return path;
+}
 
 std::wstring ExeDir()
 {
@@ -41,7 +123,7 @@ bool IsWow64(DWORD pid)
     return wow != FALSE;
 }
 
-void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath)
+void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath, std::wstring* program)
 {
     DWORD host = pid;
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -66,11 +148,14 @@ void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath)
     }
 
     exePath.clear();
+    std::wstring family, full;
+    bool packaged = false;
     HANDLE p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, host);
     if (p) {
         wchar_t buf[1024];
         DWORD sz = 1024;
         if (QueryFullProcessImageNameW(p, 0, buf, &sz)) exePath = buf;
+        packaged = program && PackageNames(p, family, full);
         CloseHandle(p);
     }
     if (!exePath.empty()) {
@@ -78,6 +163,17 @@ void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath)
         exeName = (i == std::wstring::npos) ? exePath : exePath.substr(i + 1);
     } else {
         exeName = L"?";
+    }
+
+    if (program) {
+        // Ask Windows for the package identity rather than trusting the folder
+        // layout; the path is only the fallback (and what old opt-outs migrate from).
+        *program = ProgramKeyFromPath(exePath);
+        if (packaged && !exePath.empty()) {
+            const size_t at = FindNoCase(exePath, L"\\" + full + L"\\");
+            *program = family + (at != std::wstring::npos ? exePath.substr(at + full.size() + 1)
+                                                           : L"\\" + exeName);
+        }
     }
 }
 
@@ -111,10 +207,8 @@ bool HelperRunning()
     return found;
 }
 
-// The raw title, empty when the window has none. Deliberately NOT localized:
-// FixInfo::disableKey() embeds this string in the registry opt-out key, so a
-// localized placeholder would orphan the opt-outs for untitled ghosts the moment
-// the UI language changed. The UI substitutes IDS_UNTITLED when drawing.
+// The raw title, empty when the window has none. Deliberately NOT localized: it
+// is data, not UI text; the UI substitutes IDS_UNTITLED when drawing.
 std::wstring WindowTitle(HWND h)
 {
     wchar_t t[256] = L"";

@@ -28,9 +28,13 @@ struct FixInfo {
     Kind kind = Kind::Ghost;
     DWORD pid = 0;
     std::wstring exeName, exePath, title;
+    // The program the window belongs to (proc::ProgramKeyFromPath): the opt-out is
+    // per program, so every window of it is switched on and off together.
+    std::wstring program;
     // A ghost its app has hidden (e.g. the app was minimized). It stays listed
     // until the window is destroyed, so the list does not flicker with the app.
     bool hidden = false;
 
-    std::wstring disableKey() const { return exePath + L"|" + title; }  // registry opt-out key
+    // Registry opt-out key: the program, shared by all of its windows.
+    std::wstring disableKey() const { return program.empty() ? std::wstring(L"?") : program; }
 };

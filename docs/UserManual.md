@@ -95,7 +95,9 @@ Each line has a small **eye icon** on the right:
 - **Open eye (green)** — DeGhoster is taking care of this window (recommended).
 - **Crossed-out eye (grey)** — DeGhoster is ignoring this window and leaves it alone.
 
-Click the eye to switch that single window. Ignored windows stay in the list so you can turn
+Click the eye to switch that window's **program** on or off: if a program has several windows
+in the list, they all switch together, and clicking any of their eyes switches them all back.
+Updates of the program keep your choice. Ignored windows stay in the list so you can turn
 them back on any time. You can do the same from the tray menu, where every detected window
 appears as its own entry, in the same order as in the list.
 
@@ -129,8 +131,8 @@ cursor.
 
 Every AnyDesk window appears in the status window's list with its own **eye**, just like a
 ghost window, and it is **on** by default. Click the eye (or the window's entry in the tray
-menu) to switch the enlarged cursor off for that one AnyDesk window; the choice is
-remembered per remote computer. With several AnyDesk windows open, each has its own entry.
+menu) to switch the enlarged cursor off for AnyDesk; with several AnyDesk windows open, each
+has its own entry, and they all switch together.
 
 **The size is automatic.** DeGhoster watches which remote cursor is on screen the longest —
 normally the arrow — and makes it exactly as tall as your own mouse pointer. It does that
@@ -184,7 +186,7 @@ restored to normal automatically.
 
 ## It remembers your choices
 
-Any window you switch off, whether DeGhoster is paused, and your AnyDesk cursor size settings
+Any program you switch off, whether DeGhoster is paused, and your AnyDesk cursor size settings
 are remembered between restarts. When you start DeGhoster again, it picks up right where you left
 off.
 

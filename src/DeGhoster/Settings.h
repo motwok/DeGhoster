@@ -18,8 +18,9 @@
 #pragma once
 #include <string>
 #include <unordered_set>
+#include <vector>
 
-// HKCU\Software\DeGhoster: global switch, per-window opt-outs (FixInfo::disableKey,
+// HKCU\Software\DeGhoster: global switch, per-program opt-outs (FixInfo::disableKey,
 // for ghosts and AnyDesk windows alike) and the AnyDesk cursor overlay's zoom.
 class Settings {
 public:
@@ -48,6 +49,10 @@ public:
     static int ZoomForDpi(unsigned dpi);
 
 private:
+    // Rewrites "<exe path>|<title>" opt-outs from before the per-program switch
+    // as the program's key.
+    void migrateLegacyOptOuts(const std::vector<std::wstring>& legacy);
+
     bool globalEnabled_ = true;
     bool cursorOverlayAuto_ = true;
     int cursorOverlayZoom_ = kZoomMin;

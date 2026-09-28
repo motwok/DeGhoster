@@ -80,7 +80,7 @@ with no shared mutable state beyond the win-event thunk's single-instance pointe
 | `GhostEngine` | detection + cloak + reconcile core for every case (ghosts and AnyDesk windows), driven by `SetWinEventHook` |
 | `HookInjector` | starts a helper of the target's bitness per target thread and tracks its lifetime |
 | `Autostart` | per-user HKCU `Run` register/unregister (installer hooks) |
-| `Settings` | registry persistence (global switch, per-window opt-outs, cursor overlay zoom) |
+| `Settings` | registry persistence (global switch, per-program opt-outs and their migration from the old per-window keys, cursor overlay zoom) |
 | `Theme` | color set, OS light/dark detection, immersive dark title bar |
 | `Loc` | MUI string loading (`LoadStringW` + cache) and RTL detection |
 | `ProcessUtil` | executable dir, WOW64 check, host-exe resolution, window title |
@@ -264,9 +264,10 @@ sequenceDiagram
   cached per DPI — divided by the reference's visible height. A zoom change re-renders
   the current picture from the cached source. `AutoZoom` entries of closed windows
   are dropped when a new window is added.
-- **Per window.** Each AnyDesk window is a tracked case with its own eye. The overlay
-  gets a filter from `MainWindow` that looks the root window up with
-  `GhostEngine::trackAnyDesk` and checks its opt-out key; toggling an eye calls
+- **Per window, switched per program.** Each AnyDesk window is a tracked case with its
+  own row and eye; the eye switches its program, like a ghost's. The overlay gets a
+  filter from `MainWindow` that looks the root window up with
+  `GhostEngine::trackAnyDesk` and checks its program's opt-out; toggling an eye calls
   `CursorOverlay::refresh()`, so a window switched off under the cursor loses the
   overlay at once.
 - **Lifecycle.** `MainWindow` pushes `globalEnabled`, Auto and the fixed zoom after every change; `WTS_SESSION_LOCK` hides the overlay and restores the
@@ -280,7 +281,7 @@ sequenceDiagram
 |---|---|
 | tracked | every live window of every case currently listed (ghosts and AnyDesk windows, hidden ones included) |
 | cloaked | tracked ghosts currently cloaked by us |
-| disabled | per-window opt-out, key `<ExePath>\|<WindowTitle>` |
+| disabled | per-program opt-out, key `FixInfo::disableKey()` (the window's program) |
 | global enabled | master switch |
 
 **Reconcile rule** per window: cloak ⇔ `globalEnabled && managed && windowAlive`,
@@ -288,17 +289,33 @@ where `managed = key ∉ disabled`.
 
 - **Global off** disables only the *action*. Detection keeps running, the list stays;
   entries vanish only when the window closes.
-- **Per-window off** un-cloaks that window but keeps it listed.
+- **Program off** un-cloaks every window of that program but keeps them listed. An
+  eye toggle calls `GhostEngine::refreshAll()`, which reconciles every tracked window,
+  so all windows sharing the key follow at once.
+
+The key comes from `proc::ResolveHostExe` when a window is first tracked:
+
+- For a **packaged app**, the host process's package family name and full name
+  (`GetPackageFamilyName`, `GetPackageFullName`) give
+  `<family name>\<path of the exe inside the package>`, stable across updates and
+  architectures.
+- **Otherwise**, `proc::ProgramKeyFromPath` works on the image path. A
+  `...\WindowsApps\<Name>_<Version>_<Arch>_<Res>_<Publisher>\...` path yields the same
+  family key. That branch is also what old entries migrate through, and a unit test
+  checks it against the package identity of every running Store app. A Squirrel folder
+  `app-<version>` directly above the exe becomes `app`. Any other path is used as is,
+  and an unreadable process gets `?`.
+
+The title is not part of the key; it is only the row label.
 
 ## Persistence (registry)
 
-Root: `HKCU\Software\DeGhoster` (the full executable path, not the process name, is
-the stable key part).
+Root: `HKCU\Software\DeGhoster`.
 
 | Value | Type | Meaning |
 |---|---|---|
 | `GlobalEnabled` | DWORD | master switch |
-| `Disabled\<ExePath>\|<Title>` | String | one value per disabled window |
+| `Disabled\<program key>` | String | one value per disabled program (see [State model](#state-model)); the data repeats the key |
 | `CursorOverlayAuto` | DWORD | automatic zoom per AnyDesk window (default 1) |
 | `CursorOverlayZoom` | DWORD | fixed overlay zoom in percent, 100 … 600 on a 10 % grid; written on first start from the primary monitor's scaling |
 

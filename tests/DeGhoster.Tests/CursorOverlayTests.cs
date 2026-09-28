@@ -247,31 +247,37 @@ public class CursorOverlayTests
     [SkippableFact]
 
     [Trait("Category", "InteractiveInput")]
-    public void Each_AnyDesk_window_has_its_own_eye()
+    public void AnyDesk_windows_share_their_programs_switch()
     {
         using var run = Run.Start("64", "alpha", zoom: 300);
+        using var second = Sim.Start("64", "alpha", "ad_win#2", SimX + SimW + 20, SimY, 200, 200);
         run.MoveInside();
         IntPtr ov = run.WaitOverlay();
+        string program = "\\CursorSim64.exe";
 
-        // What a click on the window's eye in the status list posts.
+        // What a click on the first window's eye in the status list posts.
         PostMessage(run.Host, WM_EYE_TOGGLE, run.Sim.Hwnd, IntPtr.Zero);
         Assert.True(WaitUntil(() => !IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "switching the window off kept the overlay");
-        Assert.True(DisabledKeys().Any(k => k.EndsWith("|" + run.Sim.Title, StringComparison.Ordinal)),
-                    "the window's opt-out was not stored like a ghost's (<exe path>|<title>)");
+        Assert.True(WaitUntil(() => DisabledKeys().Any(k => k.EndsWith(program, StringComparison.OrdinalIgnoreCase)),
+                              TimeSpan.FromSeconds(3)),
+                    "the opt-out was not stored as the program's path");
+        Assert.DoesNotContain(DisabledKeys(), k => k.Contains('|'));
         run.MoveInside();
         Thread.Sleep(400);
         Assert.False(IsWindowVisible(ov), "the overlay came back over a window that is switched off");
 
-        // A second AnyDesk window is independent of the first.
-        using var second = Sim.Start("64", "alpha", "ad_win#2", SimX + SimW + 20, SimY, 200, 200);
+        // The second window of the same program is switched off with it.
         run.MoveTo(SimX + SimW + 120, SimY + 120);
-        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)),
-                    "a second AnyDesk window got no overlay while the first is switched off");
+        Thread.Sleep(400);
+        Assert.False(IsWindowVisible(ov), "the other window of the program still got an overlay");
 
-        PostMessage(run.Host, WM_EYE_TOGGLE, run.Sim.Hwnd, IntPtr.Zero);
+        // Switching on through the second window's eye brings both back.
+        PostMessage(run.Host, WM_EYE_TOGGLE, second.Hwnd, IntPtr.Zero);
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)),
+                    "switching the program on through its other window did not bring the overlay back");
         run.MoveInside();
-        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "switching it on again did not bring it back");
-        Assert.False(DisabledKeys().Any(k => k.EndsWith("|" + run.Sim.Title, StringComparison.Ordinal)),
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "the first window stayed switched off");
+        Assert.False(DisabledKeys().Any(k => k.EndsWith(program, StringComparison.OrdinalIgnoreCase)),
                      "the opt-out was not removed");
     }
 

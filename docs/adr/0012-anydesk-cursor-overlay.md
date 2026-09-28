@@ -3,6 +3,11 @@
 - **Status:** Accepted
 - **Deciders:** Emmo Emminghaus
 
+> Amended: opt-outs are now per program, not per window (point 7). Every AnyDesk
+> window still has its own row, eye and tray entry, but the eye switches the AnyDesk
+> program, so all AnyDesk windows switch together; the per-remote opt-out through the
+> window title is gone. See [Specification.md](../Specification.md) sections 4 and 5.
+
 ## Context
 
 On a client with high display scaling (tested: 3840×2160 at 250 %) the cursor of
