@@ -1,0 +1,29 @@
+name: Manual test
+
+# A PR that changes code under src/ can only merge once the guided manual run
+# (tests/coverage-manual.ps1) has been done on exactly that code and its result
+# committed: the job compares the committed fingerprint of the run with src/.
+# Branch protection requires this job and an up-to-date branch, so the code
+# checked here - the merge of the PR into master - is the code that lands.
+# No path filter on purpose: a required check that never runs blocks the PR.
+
+on:
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+jobs:
+  manual-test:
+    name: Manual test is current
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with the base commit)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compare the manual run with the code
+        shell: pwsh
+        run: ./tests/check-manual-coverage.ps1 -Base "${{ github.event.pull_request.base.sha }}"

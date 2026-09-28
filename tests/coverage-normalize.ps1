@@ -14,8 +14,10 @@
   -CoveredOnly keeps only the lines that were hit: a report that is merged into
   another one only has to add hits, and it stays small enough to commit.
 
-  -Fingerprint writes the git blob id of every source file in the report, so a
-  merge can leave out the results for a file that has changed since.
+  -Fingerprint writes the git blob id of every file under src\ (not only those in
+  the report), so a merge can leave out the results for a file that has changed
+  since, and tests\check-manual-coverage.ps1 can tell whether any code changed
+  after the run.
 #>
 [CmdletBinding()]
 param(
@@ -81,6 +83,16 @@ try { $x.Save($w) } finally { $w.Dispose() }
 if ($Fingerprint) {
     # git hash-object applies the same clean filter (line endings) as git add, so
     # the ids match the committed blobs on every machine.
+    # Every file under src\, so a change to a file the run never reached, or a new
+    # one, still counts as a change after the run.
+    $all = if ($FingerprintAt) {
+        @(git -C $repo ls-tree -r --name-only $FingerprintAt -- src)
+    } else {
+        # Untracked files too: a file created for this change may not be added yet.
+        @(git -C $repo ls-files --cached --others --exclude-standard -- src |
+          Where-Object { Test-Path -LiteralPath (Join-Path $repo $_) })
+    }
+    foreach ($f in $all) { [void]$files.Add($f) }
     $sorted = @($files | Sort-Object)
     $ids = if ($FingerprintAt) {
         @($sorted | ForEach-Object { git -C $repo rev-parse "$($FingerprintAt):$_" })

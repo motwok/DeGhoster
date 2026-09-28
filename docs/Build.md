@@ -205,7 +205,8 @@ committed, so the CI can count it too:
   `tests\coverage-data\local.cobertura.xml`, `coverage-manual.ps1` the manual
   run's to `manual.cobertura.xml`. `tests\coverage-normalize.ps1` makes them
   mergeable (repo-relative paths, covered lines only) and stores a
-  `*.fingerprint.json` next to each: the git blob id of every source file measured.
+  `*.fingerprint.json` next to each: the git blob id of every file under `src\` at
+  the time of the run.
 - `tests\coverage-report.ps1` builds **two reports** with ReportGenerator (a
   `dotnet tool`, see `.config/dotnet-tools.json`): `report-ci` (the CI's own
   tests) and `report-combined` (CI + local + manual). Committed results for a file
@@ -215,9 +216,10 @@ committed, so the CI can count it too:
   measurement, puts both totals in the **job summary**, and uploads both reports
   as the `coverage` artifact. Locally, `coverage.ps1` does the same in `coverage\`.
 
-After changing code that the interactive or manual tests exercise, run
-`tests\coverage.ps1` (and, where it matters, `coverage-manual.ps1`) again and
-commit the updated files under `tests\coverage-data`. Keep the mouse still while
+After changing code that the interactive tests exercise, run `tests\coverage.ps1`
+again and commit the updated files under `tests\coverage-data`. A pull request that
+changes anything under `src\` also needs a new manual run (see
+[below](#guided-manual-coverage--required-for-code-changes)). Keep the mouse still while
 `coverage.ps1` runs: the interactive tests drive the real cursor.
 
 At the time of writing: CI only ≈ 94 %, combined ≈ 96 % of `src\`.
@@ -235,7 +237,7 @@ are worth.
 > "missing helpers" test therefore moves the helper executables aside and puts
 > them back, rather than copying the app somewhere else.
 
-### Guided (manual) coverage — optional
+### Guided (manual) coverage — required for code changes
 
 `tests\coverage-manual.ps1` runs DeGhoster under OpenCppCoverage and walks **you**
 through manual actions on screen (open the tray menu, toggle a per-window eye,
@@ -250,6 +252,23 @@ automated `coverage\auto.cov` into `coverage\merged-html`:
 ```
 
 This run needs a real interactive desktop and a human, so it is **not** part of CI.
+The CI does check that it was done, though: a pull request that changes anything
+under `src\` can only merge once the committed manual run matches that code. The
+[Manual test](../.github/workflows/manual-test.yml) workflow runs
+`tests\check-manual-coverage.ps1`, which compares `manual.fingerprint.json` with every
+file under `src\` of the PR merged into `master`; a changed, new or removed file fails
+it and is listed in the job summary. A PR that leaves `src\` alone passes.
+
+Because the branch must also be up to date with `master` before it merges, the order
+for a PR with code changes is:
+
+1. Merge `master` into the branch (only needed if `master` has moved).
+2. Run `.	ests\coverage-manual.ps1` on that state.
+3. Commit `tests\coverage-data` and push.
+
+If `master` gets new code before the merge, the branch has to merge it and the manual
+run has to be repeated. Check locally before pushing with
+`.	ests\check-manual-coverage.ps1 -Base origin/master`.
 
 ## Continuous integration
 
@@ -261,6 +280,11 @@ This run needs a real interactive desktop and a human, so it is **not** part of 
   **artifacts**. Make the *Build & package* job a **required status check** in the
   branch protection of `master` so a PR can't merge without a green build, passing tests
   and working deployments.
+- **Pull requests to `master`** → the [Manual test](../.github/workflows/manual-test.yml)
+  workflow's *Manual test is current* job checks that the committed guided manual run
+  matches the code (see [Guided (manual) coverage](#guided-manual-coverage--required-for-code-changes)).
+  It is a required status check too, and the branch protection also requires the branch
+  to be **up to date with `master`**, so the tested code is the code that lands.
 - **A published GitHub Release** → the same build, and the ZIP + MSI are attached to
   the release as assets (the release tag drives the GitVersion version).
 
