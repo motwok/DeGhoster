@@ -157,7 +157,18 @@ in-process and replies to the host window.
 | `WM_DGH_UNCLOAKED` | dll → host | `WM_APP+0x21` | window released |
 
 The DLL re-checks the ghost criteria before cloaking and auto-uncloaks all tracked
-windows on `DLL_PROCESS_DETACH`.
+windows on `DLL_PROCESS_DETACH`. A repeated `DGH_CLOAK` for a window it already
+tracks is applied again and answered, so every cloak request gets a reply.
+
+The host does not rely on replies alone:
+
+- Every one-second `tick()` compares its cloaked set with DWM's `DWM_CLOAKED_APP`
+  bit. A window that lost the cloak without a `WM_DGH_UNCLOAKED` is dropped from the
+  set and injected again through a new helper. That happens when a helper is killed
+  from outside: Windows removes its hook, and the DLL uncloaks on unload.
+- A `WM_DGH_CLOAKED` for a window the host no longer tracks (it stopped qualifying
+  while the request was in flight) is answered with `DGH_UNCLOAK`, so no window stays
+  cloaked without anyone remembering it.
 
 ## Bitness ([ADR-0011](adr/0011-helper-per-bitness.md))
 
@@ -314,10 +325,13 @@ installer / the `Autostart` module, see [ADR-0007](adr/0007-per-user-autostart.m
 
 ## Localization internals ([ADR-0006](adr/0006-mui-localization.md))
 
-`rcconfig.xml` (UTF-16) drives the `muirct` split:
-`<localizedResources><resourceType typeNameId="#6"/>` moves `RT_STRING` (6) to the
-`.mui`; icon/group-icon/manifest **and the `VERSIONINFO` (type 16)** stay in the
-neutral module. `cmake/Languages.cmake` (`<culture>=<LANGID>=<rc>`) is the single
+`rcconfig.xml` (UTF-16) drives the `muirct` split: `RT_STRING` (6) is listed under
+both `<localizedResources>` and `<neutralResources>`, so the en-US string table goes
+into `en-US\DeGhoster.exe.mui` **and** stays in the neutral module. The loader
+prefers the `.mui` of the UI language; the copy in the exe is the last fallback when
+no `.mui` is found at all (an exe copied without its culture folders), which would
+otherwise show empty strings. Icon/group-icon/manifest **and the `VERSIONINFO`
+(type 16)** stay in the neutral module only. `cmake/Languages.cmake` (`<culture>=<LANGID>=<rc>`) is the single
 source of truth; `strings_<lang>.rc` holds the translations. RTL (ar/he):
 `Loc::isRtl()` reads `LOCALE_IREADINGLAYOUT` of the resolved UI language, windows use
 `WS_EX_LAYOUTRTL`, and owner-drawn glyphs are kept upright via `SetLayout(hdc, 0)`.

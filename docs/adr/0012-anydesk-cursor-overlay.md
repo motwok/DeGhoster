@@ -39,7 +39,7 @@ cases that can be detected precisely and mitigated reversibly. This is one.
    [ADR-0003](0003-event-driven-detection.md): `SHOW`, `HIDE`, `LOCATIONCHANGE`
    (movement) and `NAMECHANGE` (shape). On each event the current position and cursor
    are read, because events are coalesced. The subscription exists only while the
-   feature and the global switch are on. Animated remote cursors get no special
+   global switch is on. Animated remote cursors get no special
    handling: every image change AnyDesk makes arrives as a `NAMECHANGE`.
 4. **Automatic zoom by on-screen time, per AnyDesk window (default)**, with a
    user-set fixed factor (100 … 600 %, first value = the primary monitor's scaling)
