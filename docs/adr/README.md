@@ -20,3 +20,4 @@ Format: a short [MADR](https://adr.github.io/madr/)-style record with
 | [0009](0009-automated-release-notes.md) | Automated release notes via Release Drafter | Accepted |
 | [0010](0010-integration-tests.md) | Integration tests via a native ghost simulator | Accepted |
 | [0011](0011-helper-per-bitness.md) | Inject every target through a helper process of matching bitness | Accepted |
+| [0012](0012-anydesk-cursor-overlay.md) | Enlarge the AnyDesk remote cursor with an overlay, not by injection | Accepted |

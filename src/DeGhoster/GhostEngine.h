@@ -41,7 +41,11 @@ public:
     void setListener(Listener* l) { listener_ = l; }
 
     const std::unordered_map<HWND, FixInfo>& tracked() const { return tracked_; }
+    // Every listed window of every case (ghosts and AnyDesk windows).
     int ghostCount() const { return (int)tracked_.size(); }
+    // The tracked AnyDesk window `h`, tracking it now if it qualifies; null if it
+    // is not an AnyDesk session window.
+    const FixInfo* trackAnyDesk(HWND h);
 
     void refreshAll();
     // Periodic upkeep on the host's 1 s timer: expire unanswered requests, release
@@ -58,6 +62,7 @@ private:
     static void CALLBACK winEventThunk(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
     void onWinEvent(DWORD event, HWND);
     void handleCandidate(HWND);
+    void updateHidden(HWND);   // refresh FixInfo::hidden; notifies on a change
     void reconcile(HWND);
     void uncloakAllAndWait(DWORD budgetMs);
     void untrack(HWND);      // reveal it if we cloaked it, then forget the window

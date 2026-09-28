@@ -30,6 +30,8 @@ struct Theme {
     COLORREF infoHot   = RGB(253, 224, 71);
     COLORREF exit       = RGB(165, 165, 165);
     COLORREF exitHot    = RGB(240, 240, 240);
+    COLORREF settings    = RGB(96, 165, 250);
+    COLORREF settingsHot = RGB(147, 197, 253);
 
     static Theme current();
 };

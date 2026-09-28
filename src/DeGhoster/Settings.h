@@ -19,9 +19,12 @@
 #include <string>
 #include <unordered_set>
 
-// HKCU\Software\DeGhoster: global switch + per-window opt-outs (FixInfo::disableKey).
+// HKCU\Software\DeGhoster: global switch, per-window opt-outs (FixInfo::disableKey,
+// for ghosts and AnyDesk windows alike) and the AnyDesk cursor overlay's zoom.
 class Settings {
 public:
+    static constexpr int kZoomMin = 100, kZoomMax = 600, kZoomStep = 10;
+
     void load();
 
     bool globalEnabled() const { return globalEnabled_; }
@@ -30,7 +33,23 @@ public:
     bool isManaged(const std::wstring& key) const;
     void setManaged(const std::wstring& key, bool managed);
 
+    // Automatic zoom per AnyDesk window (default on); the fixed zoom below applies
+    // when it is off.
+    bool cursorOverlayAuto() const { return cursorOverlayAuto_; }
+    void setCursorOverlayAuto(bool);
+
+    // Zoom in percent, always within [kZoomMin, kZoomMax] on a kZoomStep grid.
+    int cursorOverlayZoom() const { return cursorOverlayZoom_; }
+    void setCursorOverlayZoom(int percent);
+
+    // Clamps and snaps any percentage onto the zoom grid.
+    static int ClampZoom(int percent);
+    // The first-start zoom: the given monitor scaling (dpi 240 -> 250 %), clamped.
+    static int ZoomForDpi(unsigned dpi);
+
 private:
     bool globalEnabled_ = true;
+    bool cursorOverlayAuto_ = true;
+    int cursorOverlayZoom_ = kZoomMin;
     std::unordered_set<std::wstring> disabled_;
 };

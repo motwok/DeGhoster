@@ -34,5 +34,5 @@ IDI_APP ICON "..\\..\\assets\\app.ico"
 #define VER_FILETYPE             VFT_APP
 #define VER_INTERNALNAME_STR     "DeGhoster"
 #define VER_ORIGINALFILENAME_STR "DeGhoster.exe"
-#define VER_FILEDESCRIPTION_STR  "DeGhoster - invisible ghost-window neutralizer"
+#define VER_FILEDESCRIPTION_STR  "DeGhoster - invisible ghost-window neutralizer and AnyDesk cursor enlarger"
 #include "../version.rc"

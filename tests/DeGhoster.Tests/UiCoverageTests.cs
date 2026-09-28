@@ -202,7 +202,10 @@ public class UiCoverageTests
     {
         string build = FindBuildDir();
         EnsureGlobalEnabled();
-        string title = "DGHUI-" + Guid.NewGuid().ToString("N");
+        // "!" sorts before digits and letters, so this ghost is the first list row
+        // even when the machine has windows of its own listed (a real AnyDesk
+        // session, "1 234 567 890 - AnyDesk", would otherwise come first).
+        string title = "!DGHUI-" + Guid.NewGuid().ToString("N");
         Process sim = Start(Path.Combine(build, $"GhostSim{bits}.exe"), $"--title \"{title}\" --timeout 90", build, null);
         IntPtr ghost = WaitFor(() => FindWindowEx(IntPtr.Zero, IntPtr.Zero, GhostClass, title), TimeSpan.FromSeconds(8));
         Assert.True(ghost != IntPtr.Zero, "ghost window not found");

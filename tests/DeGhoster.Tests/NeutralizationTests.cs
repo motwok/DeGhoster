@@ -56,6 +56,55 @@ public class NeutralizationTests
         }
     }
 
+    [Theory]
+    [InlineData("64")]
+    [InlineData("32")]
+    public void DeGhoster_recloaks_ghost_after_its_helper_dies(string bits)
+    {
+        string build = FindBuildDir();
+        string deghoster = Path.Combine(build, "DeGhoster.exe");
+        string ghostSim = Path.Combine(build, $"GhostSim{bits}.exe");
+        Assert.True(File.Exists(deghoster), $"missing {deghoster} - build DeGhoster first");
+        Assert.True(File.Exists(ghostSim), $"missing {ghostSim} - build the {bits}-bit config first");
+
+        EnsureGlobalEnabled();
+
+        string title = "DGHTEST-" + Guid.NewGuid().ToString("N");
+        Process? sim = null, dg = null;
+        try
+        {
+            sim = Start(ghostSim, $"--title \"{title}\" --timeout 90", build);
+            IntPtr h = WaitForWindow(title, TimeSpan.FromSeconds(8));
+            Assert.True(h != IntPtr.Zero, "the ghost simulator window was not found");
+
+            dg = Start(deghoster, "", build);
+            Assert.True(WaitUntil(() => Cloaked(h) != 0, TimeSpan.FromSeconds(20)),
+                        $"DeGhoster did not neutralize the {bits}-bit ghost window");
+
+            // A helper killed from outside (Task Manager, an AV quarantine) takes the
+            // hook with it; the DLL's detach path then uncloaks the ghost without a
+            // reply. DeGhoster has to notice and inject again through a new helper,
+            // instead of listing the window as fixed while its ghost is back.
+            var old = HelperProcesses().Select(p => p.Id).ToHashSet();
+            Assert.NotEmpty(old);
+            foreach (var p in HelperProcesses()) { try { p.Kill(); p.WaitForExit(5000); } catch { } }
+
+            bool recloaked = WaitUntil(
+                () => HelperProcesses().Any(p => !old.Contains(p.Id)) && Cloaked(h) != 0,
+                TimeSpan.FromSeconds(20));
+            Assert.True(recloaked, "DeGhoster did not re-inject after its helper died");
+        }
+        finally
+        {
+            try { if (dg is { HasExited: false }) dg.Kill(entireProcessTree: false); } catch { }
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+            while (DateTime.UtcNow < deadline && HelperProcesses().Length > 0)
+                Thread.Sleep(100);
+            foreach (var p in HelperProcesses()) Kill(p);
+            Kill(sim);
+        }
+    }
+
     // Either bitness can be in play: the host injects through a helper matching
     // the target process, so both names have to be reaped (see ADR-0011).
     private static Process[] HelperProcesses() =>

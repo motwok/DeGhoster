@@ -3,6 +3,11 @@
 - **Status:** Accepted
 - **Deciders:** Emmo Emminghaus
 
+> Amended: the en-US string table now also stays in the language-neutral exe
+> (`RT_STRING` is listed in both sections of `rcconfig.xml`). Before, `muirct` moved
+> it into `en-US\DeGhoster.exe.mui` only, so an exe without its `.mui` folders showed
+> empty strings; the copy in the exe is now the last fallback.
+
 ## Context
 
 DeGhoster ships in many languages (en-US + 26). We want the UI to follow the user's

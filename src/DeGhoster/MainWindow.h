@@ -23,6 +23,7 @@
 #include "Theme.h"
 #include "Settings.h"
 #include "GhostEngine.h"
+#include "CursorOverlay.h"
 
 // Tray app + status window: ghost list with per-window eye toggle, power/info/exit
 // toolbar, tray menu.
@@ -57,33 +58,40 @@ private:
     void applyTheme();
     void applyFont();
     void rebuildList();
+    std::vector<std::pair<std::wstring, HWND>> sortedRows() const;   // label + window, list order
     void updateStatus();
 
     void drawButton(const DRAWITEMSTRUCT*);
     LRESULT listCustomDraw(NMLVCUSTOMDRAW*);
+    COLORREF rowColor(HWND) const;   // dimmed for a ghost its app has hidden
 
     void showWindow();
     void showTrayMenu();
     void addTray();
+    void retryTray();          // timer: re-add a tray icon the shell refused
     void warnHooksMissing();   // balloon when the x64 hook DLL failed to load
 
     void setGlobalEnabled(bool);
     void toggleWindow(HWND ghost);
+    void applyCursorOverlay();   // pushes the zoom and the global switch to the overlay
+    void showSettings();
 
     int S(int px) const { return MulDiv(px, dpi_, 96); }
 
     HINSTANCE inst_ = nullptr;
-    HWND hwnd_ = nullptr, list_ = nullptr, power_ = nullptr, info_ = nullptr, exit_ = nullptr;
+    HWND hwnd_ = nullptr, list_ = nullptr, power_ = nullptr, info_ = nullptr, exit_ = nullptr, gear_ = nullptr;
     HFONT uiFont_ = nullptr;
     HIMAGELIST rowSizer_ = nullptr;   // 1px-wide image list that forces a taller row height
     NOTIFYICONDATAW nid_{};
     UINT dpi_ = 96;
     UINT taskbarCreatedMsg_ = 0;   // "TaskbarCreated" broadcast: re-add the tray icon
+    int trayRetries_ = 0;
     bool reallyExit_ = false;
 
     Theme theme_;
     Settings settings_;
     GhostEngine engine_;
+    CursorOverlay overlay_;
 
     std::vector<HWND> menuWindows_;   // maps per-window menu ids to ghosts
 };

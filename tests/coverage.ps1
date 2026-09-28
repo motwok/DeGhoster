@@ -42,7 +42,7 @@ $out = Join-Path $repo 'coverage'
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 # Clear only THIS run's outputs; keep coverage\manual.cov (from the guided run)
 # and the merged report so a re-run doesn't destroy the manual coverage.
-Remove-Item "$out\coverage.cobertura.xml", "$out\auto.cov", "$out\unit.cov", "$out\integration.cov" -Force -ErrorAction SilentlyContinue
+Remove-Item "$out\coverage.cobertura.xml", "$out\auto.cov", "$out\unit.cov", "$out\integration.cov", "$out\interactive.cov" -Force -ErrorAction SilentlyContinue
 if (Test-Path "$out\html") { Remove-Item "$out\html" -Recurse -Force }
 
 # Two runs, because OpenCppCoverage drives exactly one command each: the native
@@ -59,20 +59,44 @@ Write-Host "==> Running native unit tests under OpenCppCoverage..." -ForegroundC
     -- "$repo\build\UnitTests.exe"
 if ($LASTEXITCODE -ne 0) { throw "UnitTests.exe failed." }
 
+# The integration tests in two runs: the ones the build server runs too, and the
+# ones it cannot (category InteractiveInput: real clicks, a visible mouse cursor).
 Write-Host "==> Running integration tests under OpenCppCoverage..." -ForegroundColor Cyan
 & $occ `
     --sources "$repo\src" `
     --modules "$repo\build" `
     --cover_children --quiet `
     --export_type "binary:$out\integration.cov" `
-    -- dotnet test "$repo\tests\DeGhoster.Tests\DeGhoster.Tests.csproj" -c Release --nologo --disable-build-servers
+    -- dotnet test "$repo\tests\DeGhoster.Tests\DeGhoster.Tests.csproj" -c Release --nologo --disable-build-servers --filter "Category!=InteractiveInput"
+
+Write-Host "==> Running the interactive tests (the build server skips them) under OpenCppCoverage..." -ForegroundColor Cyan
+& $occ `
+    --sources "$repo\src" `
+    --modules "$repo\build" `
+    --cover_children --quiet `
+    --export_type "binary:$out\interactive.cov" `
+    --export_type "cobertura:$out\interactive.cobertura.xml" `
+    -- dotnet test "$repo\tests\DeGhoster.Tests\DeGhoster.Tests.csproj" -c Release --nologo --disable-build-servers --filter "Category=InteractiveInput"
 
 Write-Host "==> Merging..." -ForegroundColor Cyan
-& $occ `
+# What the build server measures ...
+& $occ --quiet `
     --input_coverage "$out\unit.cov" `
     --input_coverage "$out\integration.cov" `
     --export_type "cobertura:$out\coverage.cobertura.xml" `
-    --export_type "html:$out\html" `
+    --export_type "html:$out\html"
+# ... and everything automated, as the base for the guided manual run.
+& $occ --quiet `
+    --input_coverage "$out\unit.cov" `
+    --input_coverage "$out\integration.cov" `
+    --input_coverage "$out\interactive.cov" `
     --export_type "binary:$out\auto.cov"
 
-Write-Host "Coverage report: $out\html\index.html" -ForegroundColor Green
+# Commit these two files: the build server merges them into its combined report.
+Write-Host "==> Storing the interactive tests' coverage in tests\coverage-data..." -ForegroundColor Cyan
+& (Join-Path $PSScriptRoot 'coverage-normalize.ps1') -In "$out\interactive.cobertura.xml" `
+    -Out "$PSScriptRoot\coverage-data\local.cobertura.xml" `
+    -Fingerprint "$PSScriptRoot\coverage-data\local.fingerprint.json" -CoveredOnly
+
+& (Join-Path $PSScriptRoot 'coverage-report.ps1') -Ci "$out\coverage.cobertura.xml" -OutDir $out
+Write-Host "Reports: $out\report-ci\index.html (build server) and $out\report-combined\index.html (all)" -ForegroundColor Green

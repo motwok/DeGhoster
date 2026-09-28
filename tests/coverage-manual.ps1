@@ -45,8 +45,18 @@ if ($DpiOnly) { $driverArgs += '-DpiOnly' }
     --modules "$repo\build" `
     --cover_children --quiet `
     --export_type "binary:$out\manual.cov" `
+    --export_type "cobertura:$out\manual.cobertura.xml" `
     --export_type "html:$out\manual-html" `
     -- powershell @driverArgs
+
+# Commit these two files: the build server merges them into its combined report.
+Write-Host "==> Storing the manual run's coverage in tests\coverage-data..." -ForegroundColor Cyan
+& (Join-Path $PSScriptRoot 'coverage-normalize.ps1') -In "$out\manual.cobertura.xml" `
+    -Out "$PSScriptRoot\coverage-data\manual.cobertura.xml" `
+    -Fingerprint "$PSScriptRoot\coverage-data\manual.fingerprint.json" -CoveredOnly
+if (Test-Path "$out\coverage.cobertura.xml") {
+    & (Join-Path $PSScriptRoot 'coverage-report.ps1') -Ci "$out\coverage.cobertura.xml" -OutDir $out
+}
 
 $auto = Join-Path $out 'auto.cov'
 if (Test-Path $auto) {

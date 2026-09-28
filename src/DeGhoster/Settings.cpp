@@ -32,19 +32,71 @@ std::wstring rootKey()
     return L"Software\\DeGhoster";
 }
 std::wstring disabledKey() { return rootKey() + L"\\Disabled"; }
+
+// Only a real REG_DWORD counts. Without the type check a hand-made string or
+// binary value of up to four bytes was reinterpreted as a number.
+bool readDword(HKEY k, const wchar_t* name, DWORD& v)
+{
+    DWORD type = 0, data = 0, sz = sizeof(data);
+    if (RegQueryValueExW(k, name, nullptr, &type, (LPBYTE)&data, &sz) != ERROR_SUCCESS ||
+        type != REG_DWORD || sz != sizeof(data))
+        return false;
+    v = data;
+    return true;
+}
+
+bool writeDword(const wchar_t* name, DWORD v)
+{
+    HKEY k;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, rootKey().c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &k, nullptr) != ERROR_SUCCESS)
+        return false;
+    LONG r = RegSetValueExW(k, name, 0, REG_DWORD, (LPBYTE)&v, sizeof(v));
+    RegCloseKey(k);
+    return r == ERROR_SUCCESS;
+}
+}
+
+int Settings::ClampZoom(int percent)
+{
+    // Clamp before rounding: adding half a step first overflowed for values near
+    // INT_MAX (e.g. from a hand-edited registry) and ended up at the minimum.
+    if (percent < kZoomMin) percent = kZoomMin;
+    if (percent > kZoomMax) percent = kZoomMax;
+    int z = (percent + kZoomStep / 2) / kZoomStep * kZoomStep;
+    if (z > kZoomMax) z = kZoomMax;
+    return z;
+}
+
+int Settings::ZoomForDpi(unsigned dpi)
+{
+    return ClampZoom(MulDiv((int)dpi, 100, 96));
 }
 
 void Settings::load()
 {
     globalEnabled_ = true;   // reset to defaults so a reload replaces, not merges
+    cursorOverlayAuto_ = true;
     disabled_.clear();
 
+    bool haveZoom = false;
     HKEY k;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, rootKey().c_str(), 0, KEY_READ, &k) == ERROR_SUCCESS) {
-        DWORD v = 1, sz = sizeof(v);
-        if (RegQueryValueExW(k, L"GlobalEnabled", nullptr, nullptr, (LPBYTE)&v, &sz) == ERROR_SUCCESS)
+        DWORD v = 0;
+        if (readDword(k, L"GlobalEnabled", v))
             globalEnabled_ = v != 0;
+        if (readDword(k, L"CursorOverlayAuto", v))
+            cursorOverlayAuto_ = v != 0;
+        if (readDword(k, L"CursorOverlayZoom", v)) {
+            cursorOverlayZoom_ = ClampZoom((int)v);
+            haveZoom = true;
+        }
         RegCloseKey(k);
+    }
+    // First start: take the primary monitor's scaling and keep it, so a later
+    // change of the display scaling does not silently change the user's zoom.
+    if (!haveZoom) {
+        cursorOverlayZoom_ = ZoomForDpi(GetDpiForSystem());
+        writeDword(L"CursorOverlayZoom", (DWORD)cursorOverlayZoom_);
     }
     if (RegOpenKeyExW(HKEY_CURRENT_USER, disabledKey().c_str(), 0, KEY_READ, &k) == ERROR_SUCCESS) {
         // Value names (exePath|title) can be long. Size the buffer to the key's
@@ -68,12 +120,19 @@ void Settings::load()
 void Settings::setGlobalEnabled(bool on)
 {
     globalEnabled_ = on;
-    HKEY k;
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, rootKey().c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &k, nullptr) == ERROR_SUCCESS) {
-        DWORD v = on ? 1 : 0;
-        RegSetValueExW(k, L"GlobalEnabled", 0, REG_DWORD, (LPBYTE)&v, sizeof(v));
-        RegCloseKey(k);
-    }
+    writeDword(L"GlobalEnabled", on ? 1 : 0);
+}
+
+void Settings::setCursorOverlayAuto(bool on)
+{
+    cursorOverlayAuto_ = on;
+    writeDword(L"CursorOverlayAuto", on ? 1 : 0);
+}
+
+void Settings::setCursorOverlayZoom(int percent)
+{
+    cursorOverlayZoom_ = ClampZoom(percent);
+    writeDword(L"CursorOverlayZoom", (DWORD)cursorOverlayZoom_);
 }
 
 bool Settings::isManaged(const std::wstring& key) const

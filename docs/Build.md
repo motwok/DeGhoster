@@ -143,9 +143,21 @@ Integration tests live in `tests/` and prove the actual neutralization end to en
 
 - **`tests/GhostSim`** (C++, built for x64 **and** x86 as `build\GhostSim64.exe` /
   `GhostSim32.exe`) creates a real ghost window matching every `IsBlocker` criterion.
+- **`tests/CursorSim`** (C++, `build\CursorSim64.exe` / `CursorSim32.exe`) simulates an
+  AnyDesk session window: class `ad_win#1`, custom cursors created with
+  `CreateIconIndirect` (colour with alpha, colour without alpha, monochrome with
+  inverting pixels, or a rapid switch between two), a system-cursor band at the top
+  like AnyDesk's own UI, and a click counter in the title.
 - **`tests/DeGhoster.Tests`** (xUnit, .NET) launches GhostSim + DeGhoster and asserts
   the window becomes `DWMWA_CLOAKED`. The `[Theory]` runs both bitnesses, so it covers
   the x64 (Helper64 → Hook64) and x86 (Helper32 → Hook32) injection paths.
+  `CursorOverlayTests` drive DeGhoster against CursorSim and move the real mouse
+  cursor: overlay size and hotspot alignment, every cursor kind, no overlay over
+  system cursors or other windows, click-through, live settings and `--quit`. On a
+  desktop without a visible cursor (no mouse attached) those tests are skipped.
+- **`tests/UnitTests`** (native) test the host modules in-process, including the
+  cursor image pipeline, the slider control, the settings window and the engine's
+  tracking of AnyDesk windows and hidden ghosts.
 
 Build first, then run the tests:
 
@@ -156,8 +168,9 @@ dotnet test tests\DeGhoster.Tests\DeGhoster.Tests.csproj -c Release
 
 They need an **interactive desktop with DWM** (they inject across processes and read
 DWM state), so they run reliably locally and in the CI Windows job, but not in a
-headless/session-0 context. GhostSim is a test-only binary and is **not** shipped in
-the ZIP/MSI. Disable building it with `-DDEGHOSTER_BUILD_TESTS=OFF`.
+headless/session-0 context. GhostSim and CursorSim are test-only binaries and are
+**not** shipped in the ZIP/MSI. Disable building them with
+`-DDEGHOSTER_BUILD_TESTS=OFF`.
 
 ### Code coverage
 
@@ -171,15 +184,45 @@ choco install opencppcoverage   # one-time
 .\tests\coverage.ps1            # builds Debug (x86+x64) + runs tests under coverage
 ```
 
-The script makes two measured runs - `build\UnitTests.exe` and the integration
-suite - and merges them, because OpenCppCoverage drives exactly one command per
-invocation. Measuring only the integration tests used to leave everything the
-native unit tests cover out of the numbers.
+The script makes three measured runs - `build\UnitTests.exe`, the integration
+suite the build server runs too, and the **interactive** tests it cannot run - and
+merges them, because OpenCppCoverage drives exactly one command per invocation.
+Measuring only the integration tests used to leave everything the native unit
+tests cover out of the numbers.
 
-The report lands in `coverage\` (Cobertura XML + browsable HTML at
-`coverage\html\index.html`). Coverage counts the C++ code in `src\` executed
-across DeGhoster, the hooks and the helpers. The automated run reaches ~97 % of
-`src\`.
+Coverage counts the C++ code in `src\` executed across DeGhoster, the hooks and
+the helpers.
+
+#### Two reports: CI only, and combined with the local and manual tests
+
+Some tests cannot run on the build server: the ones in the **`InteractiveInput`**
+category need real clicks or a visible mouse cursor (the click-through proof and
+the AnyDesk cursor overlay tests; the runner has no mouse), and the guided run of
+`coverage-manual.ps1` needs a human. Their coverage is recorded **locally** and
+committed, so the CI can count it too:
+
+- `tests\coverage.ps1` writes the interactive tests' result to
+  `tests\coverage-data\local.cobertura.xml`, `coverage-manual.ps1` the manual
+  run's to `manual.cobertura.xml`. `tests\coverage-normalize.ps1` makes them
+  mergeable (repo-relative paths, covered lines only) and stores a
+  `*.fingerprint.json` next to each: the git blob id of every file under `src\` at
+  the time of the run.
+- `tests\coverage-report.ps1` builds **two reports** with ReportGenerator (a
+  `dotnet tool`, see `.config/dotnet-tools.json`): `report-ci` (the CI's own
+  tests) and `report-combined` (CI + local + manual). Committed results for a file
+  that has **changed since** they were recorded are left out, since their line
+  numbers no longer fit; the script lists those files.
+- The [Coverage](../.github/workflows/coverage.yml) workflow runs it after its own
+  measurement, puts both totals in the **job summary**, and uploads both reports
+  as the `coverage` artifact. Locally, `coverage.ps1` does the same in `coverage\`.
+
+After changing code that the interactive tests exercise, run `tests\coverage.ps1`
+again and commit the updated files under `tests\coverage-data`. A pull request that
+changes anything under `src\` also needs a new manual run (see
+[below](#guided-manual-coverage--required-for-code-changes)). Keep the mouse still while
+`coverage.ps1` runs: the interactive tests drive the real cursor.
+
+At the time of writing: CI only ≈ 94 %, combined ≈ 96 % of `src\`.
 
 What is deliberately left uncovered needs either a fault injector or a human:
 defensive branches that only run when a Win32 call fails (`OpenProcess`,
@@ -194,7 +237,7 @@ are worth.
 > "missing helpers" test therefore moves the helper executables aside and puts
 > them back, rather than copying the app somewhere else.
 
-### Guided (manual) coverage — optional
+### Guided (manual) coverage — required for code changes
 
 `tests\coverage-manual.ps1` runs DeGhoster under OpenCppCoverage and walks **you**
 through manual actions on screen (open the tray menu, toggle a per-window eye,
@@ -209,6 +252,23 @@ automated `coverage\auto.cov` into `coverage\merged-html`:
 ```
 
 This run needs a real interactive desktop and a human, so it is **not** part of CI.
+The CI does check that it was done, though: a pull request that changes anything
+under `src\` can only merge once the committed manual run matches that code. The
+[Manual test](../.github/workflows/manual-test.yml) workflow runs
+`tests\check-manual-coverage.ps1`, which compares `manual.fingerprint.json` with every
+file under `src\` of the PR merged into `master`; a changed, new or removed file fails
+it and is listed in the job summary. A PR that leaves `src\` alone passes.
+
+Because the branch must also be up to date with `master` before it merges, the order
+for a PR with code changes is:
+
+1. Merge `master` into the branch (only needed if `master` has moved).
+2. Run `.	ests\coverage-manual.ps1` on that state.
+3. Commit `tests\coverage-data` and push.
+
+If `master` gets new code before the merge, the branch has to merge it and the manual
+run has to be repeated. Check locally before pushing with
+`.	ests\check-manual-coverage.ps1 -Base origin/master`.
 
 ## Continuous integration
 
@@ -220,6 +280,11 @@ This run needs a real interactive desktop and a human, so it is **not** part of 
   **artifacts**. Make the *Build & package* job a **required status check** in the
   branch protection of `master` so a PR can't merge without a green build, passing tests
   and working deployments.
+- **Pull requests to `master`** → the [Manual test](../.github/workflows/manual-test.yml)
+  workflow's *Manual test is current* job checks that the committed guided manual run
+  matches the code (see [Guided (manual) coverage](#guided-manual-coverage--required-for-code-changes)).
+  It is a required status check too, and the branch protection also requires the branch
+  to be **up to date with `master`**, so the tested code is the code that lands.
 - **A published GitHub Release** → the same build, and the ZIP + MSI are attached to
   the release as assets (the release tag drives the GitVersion version).
 
@@ -230,8 +295,10 @@ MSI. Release notes for that release are drafted separately by
 ([ADR-0009](adr/0009-automated-release-notes.md)).
 
 A separate [Coverage](../.github/workflows/coverage.yml) workflow builds Debug and
-publishes an OpenCppCoverage report as an artifact on pushes and PRs (informational,
-non-blocking).
+publishes two coverage reports as an artifact on pushes and PRs — the CI's own
+tests, and combined with the committed local and manual results (see
+[Code coverage](#code-coverage)); both totals appear in the job summary
+(informational, non-blocking).
 
 ## Troubleshooting
 

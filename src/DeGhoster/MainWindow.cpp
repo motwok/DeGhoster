@@ -17,6 +17,7 @@
 
 #include "MainWindow.h"
 #include "AppInfo.h"
+#include "SettingsWindow.h"
 #include "Glyphs.h"
 #include "Gfx.h"
 #include "HoverButton.h"
@@ -29,12 +30,14 @@
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <windowsx.h>   // GET_X_LPARAM
+#include <wtsapi32.h>
 #include <algorithm>
 #include <string>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "uxtheme.lib")
+#pragma comment(lib, "wtsapi32.lib")
 
 namespace {
 constexpr wchar_t kClass[] = L"DeGhosterMainWindow";
@@ -44,12 +47,19 @@ constexpr UINT WM_TRAY = WM_APP + 0x40;
 constexpr UINT WM_EYE_TOGGLE = WM_APP + 0x41;
 constexpr UINT_PTR kListSubclassId = 1;
 constexpr UINT_PTR kPendingTimer = 1;
-enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT };
-enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_WIN_BASE = 3000 };
+// Re-adds the tray icon after the shell refused it (busy at logon).
+constexpr UINT_PTR kTrayRetryTimer = 2;
+constexpr UINT kTrayRetryMs = 2000;
+constexpr int kTrayRetryMax = 30;
+enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT, IDC_SETTINGS };
+enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_SETTINGS, IDM_WIN_BASE = 3000 };
 
 // Cross-process "show yourself" ping from a second launch. RegisterWindowMessage
 // returns the same value in every process for this string.
 UINT showExistingMsg() { static UINT m = RegisterWindowMessageW(L"DeGhoster_ShowExistingInstance"); return m; }
+// Cross-process "quit" from the --quit switch. Unlike WM_COMMAND it can be let
+// through UIPI, so it also reaches an instance running elevated.
+UINT quitExistingMsg() { static UINT m = RegisterWindowMessageW(L"DeGhoster_QuitExistingInstance"); return m; }
 
 // The list view swallows the click that activates an inactive window: it emits no
 // NM_CLICK for it, so the eye needed a second click whenever the window was not
@@ -108,6 +118,11 @@ bool MainWindow::requestShutdown(DWORD timeoutMs)
         HANDLE p = pid ? OpenProcess(SYNCHRONIZE, FALSE, pid) : nullptr;
         // The tray Exit path: uncloak the windows, wind the helpers down, quit.
         PostMessageW(h, WM_COMMAND, IDC_EXIT, 0);
+        // UIPI drops WM_COMMAND from a caller below an elevated instance's
+        // integrity; the registered message is allowed through. Whichever arrives
+        // first closes the window, and the other then has no window left to reach.
+        // WM_COMMAND stays for instances that predate the registered message.
+        PostMessageW(h, quitExistingMsg(), 0, 0);
         if (p) {
             const ULONGLONG now = GetTickCount64();
             WaitForSingleObject(p, now < deadline ? (DWORD)(deadline - now) : 0);
@@ -167,6 +182,10 @@ bool MainWindow::create(HINSTANCE inst, bool startHidden)
     // in case we ever run elevated.
     taskbarCreatedMsg_ = RegisterWindowMessageW(L"TaskbarCreated");
     if (taskbarCreatedMsg_) ChangeWindowMessageFilterEx(h, taskbarCreatedMsg_, MSGFLT_ALLOW, nullptr);
+    // A second launch and the installer's --quit run at normal integrity; when we
+    // run elevated, UIPI drops their messages unless they are allowed here.
+    ChangeWindowMessageFilterEx(h, showExistingMsg(), MSGFLT_ALLOW, nullptr);
+    ChangeWindowMessageFilterEx(h, quitExistingMsg(), MSGFLT_ALLOW, nullptr);
 
     applyFont();
     settings_.load();
@@ -183,6 +202,17 @@ bool MainWindow::create(HINSTANCE inst, bool startHidden)
     // Backstop for cloak/uncloak requests the hook never answers: drop them so a
     // window can't stay stuck in "pending" forever.
     SetTimer(h, kPendingTimer, 1000, nullptr);
+    // The AnyDesk cursor overlay: its own window and WinEvent subscription, and
+    // lock/unlock notifications so the real cursor is restored on the lock screen.
+    // Each AnyDesk window is a listed case with its own eye, like a ghost; the
+    // overlay only enlarges the cursor over the windows that are switched on.
+    overlay_.create(inst);
+    overlay_.setWindowFilter([this](HWND root) {
+        const FixInfo* fi = engine_.trackAnyDesk(root);
+        return fi && settings_.isManaged(fi->disableKey());
+    });
+    applyCursorOverlay();
+    WTSRegisterSessionNotification(h, NOTIFY_FOR_THIS_SESSION);
     updateStatus();
     // A hook DLL that will not load makes the x64 path a silent no-op: ghosts are
     // listed but never fixed, with nothing to tell the user why. Say so once.
@@ -209,9 +239,11 @@ void MainWindow::onCreate()
     power_ = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_POWER, inst_, nullptr);
     info_  = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_INFO,  inst_, nullptr);
     exit_  = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_EXIT,  inst_, nullptr);
+    gear_  = CreateWindowW(L"BUTTON", L"", bs, 0, 0, 0, 0, hwnd_, (HMENU)IDC_SETTINGS, inst_, nullptr);
     ui::EnableHover(power_);
     ui::EnableHover(info_);
     ui::EnableHover(exit_);
+    ui::EnableHover(gear_);
 
     list_ = CreateWindowExW(0, WC_LISTVIEWW, L"",
                             // LVS_SHAREIMAGELISTS: rowSizer_ belongs to us and is freed in
@@ -267,6 +299,7 @@ void MainWindow::layout()
     MoveWindow(power_, pad, (band - btn) / 2, btn, btn, TRUE);
     MoveWindow(exit_, rc.right - pad - btn, (band - btn) / 2, btn, btn, TRUE);
     MoveWindow(info_, rc.right - pad - 2 * btn - gap, (band - btn) / 2, btn, btn, TRUE);
+    MoveWindow(gear_, rc.right - pad - 3 * btn - 2 * gap, (band - btn) / 2, btn, btn, TRUE);
     MoveWindow(list_, 0, band, rc.right, rc.bottom - band, TRUE);
     sizeListColumns();
 }
@@ -285,6 +318,22 @@ void MainWindow::sizeListColumns()
     ListView_SetColumnWidth(list_, 1, eye);
 }
 
+// tracked() is an unordered_map, so iteration order is unstable and rows would
+// visibly reshuffle. Sort by label (then hwnd) for a stable, predictable order,
+// the same in the list and in the tray menu.
+std::vector<std::pair<std::wstring, HWND>> MainWindow::sortedRows() const
+{
+    std::vector<std::pair<std::wstring, HWND>> rows;
+    rows.reserve(engine_.tracked().size());
+    for (auto& kv : engine_.tracked())
+        rows.push_back({ RowLabel(kv.second), kv.first });
+    std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
+        int c = CompareStringOrdinal(a.first.c_str(), -1, b.first.c_str(), -1, TRUE);
+        return c ? c == CSTR_LESS_THAN : a.second < b.second;
+    });
+    return rows;
+}
+
 void MainWindow::rebuildList()
 {
     // Remember the selected ghost so a rebuild (fired on every add/remove) doesn't
@@ -296,17 +345,7 @@ void MainWindow::rebuildList()
         if (ListView_GetItem(list_, &s)) selected = (HWND)s.lParam;
     }
 
-    // tracked() is an unordered_map, so iteration order is unstable and rows would
-    // visibly reshuffle. Sort by label (then hwnd) for a stable, predictable list.
-    std::vector<std::pair<std::wstring, HWND>> rows;
-    rows.reserve(engine_.tracked().size());
-    for (auto& kv : engine_.tracked())
-        rows.push_back({ RowLabel(kv.second), kv.first });
-    std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
-        int c = CompareStringOrdinal(a.first.c_str(), -1, b.first.c_str(), -1, TRUE);
-        return c ? c == CSTR_LESS_THAN : a.second < b.second;
-    });
-
+    const auto rows = sortedRows();
     ListView_DeleteAllItems(list_);
     for (auto& r : rows) {
         LVITEMW it{}; it.mask = LVIF_PARAM | LVIF_TEXT;
@@ -364,6 +403,8 @@ void MainWindow::drawButton(const DRAWITEMSTRUCT* d)
         gfx::DrawGlyph(d->hDC, rc, glyph::Info, hot ? theme_.infoHot : theme_.info, gl);
     } else if (d->CtlID == IDC_EXIT) {
         gfx::DrawGlyph(d->hDC, rc, glyph::Exit, hot ? theme_.exitHot : theme_.exit, gl);
+    } else if (d->CtlID == IDC_SETTINGS) {
+        gfx::DrawGlyph(d->hDC, rc, glyph::Settings, hot ? theme_.settingsHot : theme_.settings, gl);
     }
 }
 
@@ -375,7 +416,7 @@ LRESULT MainWindow::listCustomDraw(NMLVCUSTOMDRAW* cd)
     case CDDS_ITEMPREPAINT: {
         bool alt = (cd->nmcd.dwItemSpec % 2) != 0;
         cd->clrTextBk = alt ? theme_.rowAlt : theme_.listBg;
-        cd->clrText = theme_.fore;
+        cd->clrText = rowColor((HWND)cd->nmcd.lItemlParam);
         return CDRF_NOTIFYSUBITEMDRAW;
     }
     case CDDS_ITEMPREPAINT | CDDS_SUBITEM: {
@@ -410,11 +451,18 @@ LRESULT MainWindow::listCustomDraw(NMLVCUSTOMDRAW* cd)
         }
         bool alt = (cd->nmcd.dwItemSpec % 2) != 0;
         cd->clrTextBk = alt ? theme_.rowAlt : theme_.listBg;
-        cd->clrText = theme_.fore;
+        cd->clrText = rowColor((HWND)cd->nmcd.lItemlParam);
         return CDRF_NEWFONT;
     }
     }
     return CDRF_DODEFAULT;
+}
+
+// A ghost its app has hidden (minimized) stays listed, greyed out.
+COLORREF MainWindow::rowColor(HWND h) const
+{
+    auto it = engine_.tracked().find(h);
+    return it != engine_.tracked().end() && it->second.hidden ? theme_.foreDim : theme_.fore;
 }
 
 void MainWindow::setGlobalEnabled(bool on)
@@ -423,6 +471,20 @@ void MainWindow::setGlobalEnabled(bool on)
     settings_.setGlobalEnabled(on);
     InvalidateRect(power_, nullptr, TRUE);
     engine_.refreshAll();
+    applyCursorOverlay();
+    SettingsWindow::Sync();
+}
+
+void MainWindow::applyCursorOverlay()
+{
+    overlay_.setZoom(settings_.cursorOverlayZoom());
+    overlay_.setAuto(settings_.cursorOverlayAuto());
+    overlay_.setEnabled(settings_.globalEnabled());
+}
+
+void MainWindow::showSettings()
+{
+    SettingsWindow::Show(inst_, hwnd_, theme_, dpi_, settings_);
 }
 
 void MainWindow::toggleWindow(HWND ghost)
@@ -432,6 +494,7 @@ void MainWindow::toggleWindow(HWND ghost)
     std::wstring key = it->second.disableKey();
     settings_.setManaged(key, !settings_.isManaged(key));
     engine_.refreshAll();
+    overlay_.refresh();   // an AnyDesk window switched under the cursor
     InvalidateRect(list_, nullptr, FALSE);
 }
 
@@ -453,7 +516,26 @@ void MainWindow::addTray()
     nid_.hIcon = (HICON)LoadImageW(inst_, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
                                    GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
     lstrcpynW(nid_.szTip, app::Name, ARRAYSIZE(nid_.szTip));
-    Shell_NotifyIconW(NIM_ADD, &nid_);
+    KillTimer(hwnd_, kTrayRetryTimer);
+    if (Shell_NotifyIconW(NIM_ADD, &nid_)) return;
+    // The shell can still be busy at logon and time the request out. No
+    // TaskbarCreated follows then, so without a retry the app would run with
+    // neither a window nor a tray icon for the whole session.
+    trayRetries_ = 0;
+    SetTimer(hwnd_, kTrayRetryTimer, kTrayRetryMs, nullptr);
+}
+
+void MainWindow::retryTray()
+{
+    // The add may have gone through despite the timeout, so probe with
+    // NIM_MODIFY first, as the Shell_NotifyIcon documentation advises.
+    nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    if (Shell_NotifyIconW(NIM_MODIFY, &nid_) || Shell_NotifyIconW(NIM_ADD, &nid_)) {
+        KillTimer(hwnd_, kTrayRetryTimer);
+        updateStatus();
+    } else if (++trayRetries_ >= kTrayRetryMax) {
+        KillTimer(hwnd_, kTrayRetryTimer);   // a later Explorer start sends TaskbarCreated
+    }
 }
 
 void MainWindow::warnHooksMissing()
@@ -482,14 +564,15 @@ void MainWindow::showTrayMenu()
     if (engine_.tracked().empty()) {
         AppendMenuW(m, MF_STRING | MF_GRAYED, 0, loc::t(IDS_MENU_NOWINDOWS));
     } else {
-        for (auto& kv : engine_.tracked()) {
+        for (auto& r : sortedRows()) {
             UINT id = IDM_WIN_BASE + (UINT)menuWindows_.size();
-            menuWindows_.push_back(kv.first);
-            std::wstring label = RowLabel(kv.second);
-            bool managed = settings_.isManaged(kv.second.disableKey());
-            AppendMenuW(m, MF_STRING | (managed ? MF_CHECKED : 0), id, label.c_str());
+            menuWindows_.push_back(r.second);
+            bool managed = settings_.isManaged(engine_.tracked().at(r.second).disableKey());
+            AppendMenuW(m, MF_STRING | (managed ? MF_CHECKED : 0), id, r.first.c_str());
         }
     }
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING, IDM_SETTINGS, loc::t(IDS_MENU_SETTINGS));
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, IDM_INFO, loc::t(IDS_MENU_INFO));
     AppendMenuW(m, MF_STRING, IDM_QUIT, loc::t(IDS_MENU_QUIT));
@@ -502,6 +585,7 @@ void MainWindow::showTrayMenu()
     if (cmd == IDM_SHOW) showWindow();
     else if (cmd == IDM_ACTIVE) setGlobalEnabled(!on);
     else if (cmd == IDM_INFO) InfoWindow::Show(inst_, hwnd_, theme_, dpi_);
+    else if (cmd == IDM_SETTINGS) showSettings();
     else if (cmd == IDM_QUIT) { reallyExit_ = true; DestroyWindow(hwnd_); }
     else if (cmd >= IDM_WIN_BASE) {
         size_t i = cmd - IDM_WIN_BASE;
@@ -547,6 +631,7 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         switch (LOWORD(wp)) {
         case IDC_POWER: setGlobalEnabled(!settings_.globalEnabled()); return 0;
         case IDC_INFO:  InfoWindow::Show(inst_, hwnd_, theme_, dpi_); return 0;
+        case IDC_SETTINGS: showSettings(); return 0;
         case IDC_EXIT:  reallyExit_ = true; DestroyWindow(hwnd_); return 0;
         }
         return 0;
@@ -559,11 +644,21 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         else if (LOWORD(lp) == WM_RBUTTONUP) showTrayMenu();
         return 0;
 
+    case SettingsWindow::WM_SETTINGS_CHANGED: applyCursorOverlay(); return 0;
+
+    case WM_WTSSESSION_CHANGE:
+        // The lock screen runs on the secure desktop where no cursor event reaches
+        // us, so restore the real cursor explicitly instead of relying on timing.
+        if (wp == WTS_SESSION_LOCK) overlay_.setSessionLocked(true);
+        else if (wp == WTS_SESSION_UNLOCK) overlay_.setSessionLocked(false);
+        return 0;
+
     case WM_DGH_CLOAKED:   engine_.onCloaked((HWND)wp);   updateStatus(); return 0;
     case WM_DGH_UNCLOAKED: engine_.onUncloaked((HWND)wp); updateStatus(); return 0;
 
     case WM_TIMER:
         if (wp == kPendingTimer) engine_.tick();
+        else if (wp == kTrayRetryTimer) retryTray();
         return 0;
 
     case WM_SETTINGCHANGE:
@@ -585,6 +680,7 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         // and the Restart Manager expects the app to close itself. stop() is
         // idempotent, so WM_DESTROY repeating the teardown is harmless.
         if (wp) {
+            overlay_.destroy();
             engine_.stop(700);
             reallyExit_ = true;
             DestroyWindow(hwnd_);
@@ -598,6 +694,9 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_DESTROY:
         KillTimer(hwnd_, kPendingTimer);
+        KillTimer(hwnd_, kTrayRetryTimer);
+        WTSUnRegisterSessionNotification(hwnd_);
+        overlay_.destroy();   // hides the overlay and gives the real cursor back
         engine_.stop();
         Shell_NotifyIconW(NIM_DELETE, &nid_);
         if (nid_.hIcon) { DestroyIcon(nid_.hIcon); nid_.hIcon = nullptr; }
@@ -611,6 +710,11 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
     }
     if (msg == showExistingMsg()) {   // a second launch asked us to surface
         showWindow();
+        return 0;
+    }
+    if (msg == quitExistingMsg() && msg) {   // --quit: the tray Exit path
+        reallyExit_ = true;
+        DestroyWindow(hwnd_);
         return 0;
     }
     return DefWindowProcW(hwnd_, msg, wp, lp);

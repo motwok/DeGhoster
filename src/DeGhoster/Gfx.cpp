@@ -52,6 +52,38 @@ void FillCircle(HDC hdc, RECT rc, BYTE alpha, COLORREF color)
     g.FillEllipse(&b, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top);
 }
 
+namespace {
+void PillPath(G::GraphicsPath& p, RECT rc, float inset)
+{
+    const G::REAL x = rc.left + inset, y = rc.top + inset;
+    const G::REAL w = (rc.right - rc.left) - 2 * inset, h = (rc.bottom - rc.top) - 2 * inset;
+    const G::REAL d = std::min(w, h);
+    p.AddArc(x, y, d, d, 90, 180);
+    p.AddArc(x + w - d, y, d, d, 270, 180);
+    p.CloseFigure();
+}
+}
+
+void FillPill(HDC hdc, RECT rc, COLORREF color)
+{
+    G::Graphics g(hdc);
+    g.SetSmoothingMode(G::SmoothingModeAntiAlias);
+    G::GraphicsPath p;
+    PillPath(p, rc, 0);
+    G::SolidBrush b(G::Color(255, GetRValue(color), GetGValue(color), GetBValue(color)));
+    g.FillPath(&b, &p);
+}
+
+void StrokePill(HDC hdc, RECT rc, COLORREF color, float width)
+{
+    G::Graphics g(hdc);
+    g.SetSmoothingMode(G::SmoothingModeAntiAlias);
+    G::GraphicsPath p;
+    PillPath(p, rc, width / 2);
+    G::Pen pen(G::Color(255, GetRValue(color), GetGValue(color), GetBValue(color)), width);
+    g.DrawPath(&pen, &p);
+}
+
 GdiPlus::GdiPlus()
 {
     G::GdiplusStartupInput in;

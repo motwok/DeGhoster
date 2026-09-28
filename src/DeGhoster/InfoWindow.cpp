@@ -51,7 +51,13 @@ HWND InfoWindow::ActiveHandle() { return s_active; }
 
 void InfoWindow::Show(HINSTANCE inst, HWND owner, const Theme& theme, UINT dpi)
 {
-    if (s_active && IsWindow(s_active)) { SetForegroundWindow(s_active); return; }
+    if (s_active && IsWindow(s_active)) {
+        // It may be hidden along with a minimized or hidden owner, and
+        // SetForegroundWindow alone would not bring it back.
+        ShowWindow(s_active, SW_SHOWNORMAL);
+        SetForegroundWindow(s_active);
+        return;
+    }
 
     static bool registered = false;
     if (!registered) {
@@ -69,7 +75,8 @@ void InfoWindow::Show(HINSTANCE inst, HWND owner, const Theme& theme, UINT dpi)
     self->theme_ = theme;
     self->dpi_ = dpi;
 
-    RECT wr{ 0, 0, self->S(400), self->S(396) };
+    self->extra_ = self->descExtra();
+    RECT wr{ 0, 0, self->S(400), self->S(396) + self->extra_ };
     AdjustWindowRectExForDpi(&wr, WS_CAPTION | WS_SYSMENU, FALSE, 0, dpi);
     int ww = wr.right - wr.left, wh = wr.bottom - wr.top;
 
@@ -143,11 +150,30 @@ void InfoWindow::applyDpiAssets()
     if (link_)        SendMessageW(link_, WM_SETFONT, (WPARAM)uiFont_, TRUE);
 }
 
+// How much taller than its three-line slot the description needs to be at the
+// current DPI; everything below it moves down by that much. Long translations
+// would otherwise run into the copyright line.
+int InfoWindow::descExtra() const
+{
+    HFONT f = CreateFontW(-MulDiv(9, dpi_, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                          DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    HDC dc = GetDC(nullptr);
+    HFONT of = (HFONT)SelectObject(dc, f);
+    RECT r{ 0, 0, S(400) - 2 * S(24), 0 };
+    DrawTextW(dc, loc::t(IDS_INFO_DESC), -1, &r, DT_CALCRECT | DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+    SelectObject(dc, of);
+    ReleaseDC(nullptr, dc);
+    DeleteObject(f);
+    const int extra = (r.bottom - r.top) - S(52);
+    return extra > 0 ? extra : 0;
+}
+
 void InfoWindow::layout()
 {
     RECT rc; GetClientRect(hwnd_, &rc);
-    MoveWindow(licenseLink_, S(24), S(248), S(340), S(24), TRUE);
-    MoveWindow(link_, S(24), S(318), S(280), S(24), TRUE);
+    MoveWindow(licenseLink_, S(24), S(248) + extra_, S(340), S(24), TRUE);
+    MoveWindow(link_, S(24), S(318) + extra_, S(280), S(24), TRUE);
     MoveWindow(ok_, rc.right - S(24) - S(88), rc.bottom - S(22) - S(32), S(88), S(32), TRUE);
 }
 
@@ -170,14 +196,14 @@ void InfoWindow::paint(HDC hdc)
     RECT r1{ S(24), S(88), rc.right - S(24), S(136) };
     DrawTextW(hdc, kTagline, -1, &r1, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
     SetTextColor(hdc, theme_.foreDim);
-    RECT r2{ S(24), S(138), rc.right - S(24), S(190) };
+    RECT r2{ S(24), S(138), rc.right - S(24), S(190) + extra_ };
     DrawTextW(hdc, loc::t(IDS_INFO_DESC), -1, &r2, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
-    RECT r3{ S(24), S(198), rc.right - S(24), S(218) };
+    RECT r3{ S(24), S(198) + extra_, rc.right - S(24), S(218) + extra_ };
     DrawTextW(hdc, kCopy, -1, &r3, DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
-    RECT r4{ S(24), S(220), rc.right - S(24), S(240) };
+    RECT r4{ S(24), S(220) + extra_, rc.right - S(24), S(240) + extra_ };
     DrawTextW(hdc, loc::t(IDS_INFO_LICENSE), -1, &r4, DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
     SetTextColor(hdc, theme_.fore);
-    RECT r5{ S(24), S(286), rc.right - S(24), S(316) };
+    RECT r5{ S(24), S(286) + extra_, rc.right - S(24), S(316) + extra_ };
     DrawTextW(hdc, loc::t(IDS_INFO_SUPPORT), -1, &r5, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
 
     SelectObject(hdc, old);
@@ -215,8 +241,11 @@ LRESULT InfoWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         // control positions stayed at the DPI the window was opened at.
         dpi_ = HIWORD(wp);
         applyDpiAssets();
+        extra_ = descExtra();
         const RECT* p = (const RECT*)lp;
-        SetWindowPos(hwnd_, nullptr, p->left, p->top, p->right - p->left, p->bottom - p->top,
+        RECT wr{ 0, 0, S(400), S(396) + extra_ };
+        AdjustWindowRectExForDpi(&wr, WS_CAPTION | WS_SYSMENU, FALSE, 0, dpi_);
+        SetWindowPos(hwnd_, nullptr, p->left, p->top, wr.right - wr.left, wr.bottom - wr.top,
                      SWP_NOZORDER | SWP_NOACTIVATE);
         layout();
         InvalidateRect(hwnd_, nullptr, TRUE);

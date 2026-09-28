@@ -70,6 +70,15 @@ jobs:
             --export_type cobertura:coverage\coverage.cobertura.xml `
             --export_type html:coverage\html
 
+      # Two reports: this run's tests only, and combined with the committed results
+      # of the tests the runner cannot do (visible mouse cursor, manual steps; see
+      # tests/coverage-data and docs/Build.md). Both totals go to the job summary.
+      - name: Coverage reports (CI only / combined with local + manual tests)
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          ./tests/coverage-report.ps1 -Ci coverage/coverage.cobertura.xml -OutDir coverage
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v7

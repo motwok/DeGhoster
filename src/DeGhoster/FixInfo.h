@@ -20,8 +20,17 @@
 #include <string>
 
 struct FixInfo {
+    // Which case the window is: a click-eating ghost (neutralized by cloaking it
+    // from inside its process) or an AnyDesk session window (whose remote cursor
+    // the CursorOverlay enlarges; nothing is done to the window itself).
+    enum class Kind { Ghost, AnyDesk };
+
+    Kind kind = Kind::Ghost;
     DWORD pid = 0;
     std::wstring exeName, exePath, title;
+    // A ghost its app has hidden (e.g. the app was minimized). It stays listed
+    // until the window is destroyed, so the list does not flicker with the app.
+    bool hidden = false;
 
     std::wstring disableKey() const { return exePath + L"|" + title; }  // registry opt-out key
 };
