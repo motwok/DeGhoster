@@ -16,6 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #include "Settings.h"
+#include "ProcessUtil.h"   // ProgramKeyFromPath, for migrating old opt-outs
 #include <windows.h>
 #include <string>
 #include <vector>
@@ -99,22 +100,48 @@ void Settings::load()
         writeDword(L"CursorOverlayZoom", (DWORD)cursorOverlayZoom_);
     }
     if (RegOpenKeyExW(HKEY_CURRENT_USER, disabledKey().c_str(), 0, KEY_READ, &k) == ERROR_SUCCESS) {
-        // Value names (exePath|title) can be long. Size the buffer to the key's
+        // Value names (program keys) can be long. Size the buffer to the key's
         // actual maximum so a single long name can't return ERROR_MORE_DATA and
         // cut the enumeration short, silently dropping every later opt-out.
         DWORD maxLen = 0;
         RegQueryInfoKeyW(k, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
                          nullptr, &maxLen, nullptr, nullptr, nullptr);
         std::vector<wchar_t> name(maxLen + 1u);
+        std::vector<std::wstring> legacy;
         for (DWORD i = 0;; ++i) {
             DWORD len = (DWORD)name.size();
             LONG r = RegEnumValueW(k, i, name.data(), &len, nullptr, nullptr, nullptr, nullptr);
             if (r == ERROR_NO_MORE_ITEMS) break;
-            if (r == ERROR_SUCCESS && name[0]) disabled_.insert(name.data());
+            if (r == ERROR_SUCCESS && name[0]) {
+                // '|' cannot occur in a path or a package name, so it marks an
+                // opt-out from before the per-program switch: "<exe path>|<title>".
+                if (wcschr(name.data(), L'|')) legacy.push_back(name.data());
+                else disabled_.insert(name.data());
+            }
             // any other error for this index: skip it, keep enumerating
         }
         RegCloseKey(k);
+        migrateLegacyOptOuts(legacy);
     }
+}
+
+void Settings::migrateLegacyOptOuts(const std::vector<std::wstring>& legacy)
+{
+    if (legacy.empty()) return;
+    // A window that was switched off switches its whole program off now. The
+    // entries are rewritten only after the enumeration, which deleting values
+    // while it runs would disturb.
+    HKEY k = nullptr;
+    const bool writable = RegOpenKeyExW(HKEY_CURRENT_USER, disabledKey().c_str(), 0,
+                                        KEY_SET_VALUE, &k) == ERROR_SUCCESS;
+    for (const std::wstring& old : legacy) {
+        const std::wstring key = proc::ProgramKeyFromPath(old.substr(0, old.find(L'|')));
+        disabled_.insert(key);
+        if (writable && RegSetValueExW(k, key.c_str(), 0, REG_SZ, (const BYTE*)key.c_str(),
+                                       (DWORD)((key.size() + 1) * sizeof(wchar_t))) == ERROR_SUCCESS)
+            RegDeleteValueW(k, old.c_str());
+    }
+    if (writable) RegCloseKey(k);
 }
 
 void Settings::setGlobalEnabled(bool on)
@@ -150,9 +177,9 @@ void Settings::setManaged(const std::wstring& key, bool managed)
             // the value was already gone), so the in-memory set can't drift from it.
             if (r == ERROR_SUCCESS || r == ERROR_FILE_NOT_FOUND) disabled_.erase(key);
         } else {
-            std::wstring title = key.substr(key.find(L'|') + 1);  // readable value
+            // The data only repeats the key, for someone reading the registry.
             LONG r = RegSetValueExW(k, key.c_str(), 0, REG_SZ,
-                                    (LPBYTE)title.c_str(), (DWORD)((title.size() + 1) * sizeof(wchar_t)));
+                                    (const BYTE*)key.c_str(), (DWORD)((key.size() + 1) * sizeof(wchar_t)));
             if (r == ERROR_SUCCESS) disabled_.insert(key);
         }
         RegCloseKey(k);

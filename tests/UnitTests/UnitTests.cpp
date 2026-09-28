@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdio>
 #include <climits>
+#include <tlhelp32.h>
 
 #include "Settings.h"
 #include "Theme.h"
@@ -59,15 +60,15 @@ static void SettingsTests()
         Check(s3.globalEnabled(), "GlobalEnabled=true persists across reload");
     }
     {
-        const std::wstring key = L"C:\\Apps\\Ghosty.exe|Some Window Title";
+        const std::wstring key = L"C:\\Apps\\Ghosty.exe";
         Settings s; s.load();
-        Check(s.isManaged(key), "unknown window is managed by default");
+        Check(s.isManaged(key), "unknown program is managed by default");
         s.setManaged(key, false);
-        Check(!s.isManaged(key), "setManaged(false) marks the window unmanaged");
+        Check(!s.isManaged(key), "setManaged(false) marks the program unmanaged");
         Settings s2; s2.load();
         Check(!s2.isManaged(key), "unmanaged state persists across reload");
         s2.setManaged(key, true);
-        Check(s2.isManaged(key), "setManaged(true) re-manages the window");
+        Check(s2.isManaged(key), "setManaged(true) re-manages the program");
         Settings s3; s3.load();
         Check(s3.isManaged(key), "re-managed state persists across reload");
     }
@@ -75,14 +76,49 @@ static void SettingsTests()
         // A value name longer than the old fixed 1024-wchar buffer used to make
         // RegEnumValueW return ERROR_MORE_DATA and cut the enumeration short,
         // silently dropping this opt-out (and any after it) on reload.
-        const std::wstring longKey = L"C:\\Apps\\Ghosty.exe|" + std::wstring(2000, L'x');
-        const std::wstring shortKey = L"C:\\Apps\\Other.exe|Small";
+        const std::wstring longKey = L"C:\\Apps\\" + std::wstring(2000, L'x') + L"\\Ghosty.exe";
+        const std::wstring shortKey = L"C:\\Apps\\Other.exe";
         Settings s; s.load();
         s.setManaged(longKey, false);
         s.setManaged(shortKey, false);
         Settings s2; s2.load();
         Check(!s2.isManaged(longKey), "long (>1024 char) opt-out survives reload");
         Check(!s2.isManaged(shortKey), "opt-out after a long one is not dropped");
+    }
+    {
+        // Opt-outs from before the per-program switch ("<exe path>|<title>") turn
+        // into the program's key, in memory and in the registry.
+        const std::wstring dis = root + L"\\Disabled";
+        HKEY k;
+        if (Check(RegCreateKeyExW(HKEY_CURRENT_USER, dis.c_str(), 0, nullptr, 0, KEY_WRITE,
+                                  nullptr, &k, nullptr) == ERROR_SUCCESS, "open Disabled for writing")) {
+            const wchar_t* old[] = {
+                L"C:\\Legacy\\Old.exe|Some title",
+                L"C:\\Program Files\\WindowsApps\\Pkg.Name_1.2.3.4_x64__pub123\\bin\\App.exe|T",
+                L"|untitled from an unreadable process",
+            };
+            for (const wchar_t* n : old)
+                RegSetValueExW(k, n, 0, REG_SZ, (const BYTE*)L"t", 2 * sizeof(wchar_t));
+            RegCloseKey(k);
+        }
+        Settings s; s.load();
+        Check(!s.isManaged(L"C:\\Legacy\\Old.exe"), "an old opt-out switches its program off");
+        Check(!s.isManaged(L"Pkg.Name_pub123\\bin\\App.exe"), "an old Store-app opt-out keys on the package family");
+        Check(!s.isManaged(L"?"), "an old opt-out without a path becomes the unknown program");
+        bool anyOld = false, hasNew = false;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, dis.c_str(), 0, KEY_READ, &k) == ERROR_SUCCESS) {
+            wchar_t n[4096];
+            for (DWORD i = 0;; ++i) {
+                DWORD len = ARRAYSIZE(n);
+                if (RegEnumValueW(k, i, n, &len, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS) break;
+                if (wcschr(n, L'|')) anyOld = true;
+                if (lstrcmpW(n, L"C:\\Legacy\\Old.exe") == 0) hasNew = true;
+            }
+            RegCloseKey(k);
+        }
+        Check(!anyOld && hasNew, "the registry holds the migrated keys and no old ones");
+        Settings s2; s2.load();
+        Check(!s2.isManaged(L"C:\\Legacy\\Old.exe"), "a migrated opt-out survives the next reload");
     }
 
     {
@@ -655,8 +691,10 @@ static void GhostEngineTests()
           "an AnyDesk session window is listed as a case of its own");
     Check(t.count(ghost) && t.at(ghost).kind == FixInfo::Kind::Ghost, "a ghost is listed as a ghost");
     Check(eng.ghostCount() >= 2 && l.changes >= 2, "both count and both notify the listener");
-    Check(t.count(ad) && t.at(ad).disableKey().find(L"|123 456 789 - AnyDesk") != std::wstring::npos,
-          "an AnyDesk window is switched off per window, keyed like a ghost");
+    // Both belong to this process, so they are one program with one switch.
+    Check(t.count(ad) && t.count(ghost) && t.at(ad).disableKey() == t.at(ghost).disableKey() &&
+          t.at(ad).disableKey().find(L'|') == std::wstring::npos && t.at(ad).disableKey() != L"?",
+          "windows are switched off per program, AnyDesk windows and ghosts alike");
     Check(t.count(ad) && eng.trackAnyDesk(ad) == &t.at(ad), "trackAnyDesk finds the tracked window");
     Check(eng.trackAnyDesk(ghost) == nullptr, "a ghost is not an AnyDesk window");
     Check(eng.trackAnyDesk(host) == nullptr, "an ordinary window is not tracked");
@@ -841,6 +879,59 @@ static void ProcessUtilTests()
     Check(!exePath.empty(), "ResolveHostExe returns a full path");
     proc::ResolveHostExe(0xFFFFFFFCu, exeName, exePath);
     Check(exeName == L"?", "ResolveHostExe marks an unknown pid");
+
+    // The per-program opt-out key.
+    std::wstring program;
+    proc::ResolveHostExe(GetCurrentProcessId(), exeName, exePath, &program);
+    Check(program == exePath, "an unpackaged program is keyed by its full path");
+    proc::ResolveHostExe(0xFFFFFFFCu, exeName, exePath, &program);
+    Check(program == L"?", "an unreadable process is the unknown program");
+
+    struct { const wchar_t* path; const wchar_t* key; const char* what; } cases[] = {
+        { L"C:\\Program Files (x86)\\AnyDesk\\AnyDesk.exe", L"C:\\Program Files (x86)\\AnyDesk\\AnyDesk.exe",
+          "a normal program keeps its full path" },
+        { L"C:\\Program Files\\WindowsApps\\5319275A.WhatsAppDesktop_2.2637.100.0_x64__cv1g1gvanyjgm\\WhatsApp.Root.exe",
+          L"5319275A.WhatsAppDesktop_cv1g1gvanyjgm\\WhatsApp.Root.exe",
+          "a Store app is keyed by its package family, without version and architecture" },
+        { L"D:\\WindowsApps\\Pkg.Name_1.0.0.0_neutral_split.scale-200_pub123\\sub\\App.exe",
+          L"Pkg.Name_pub123\\sub\\App.exe",
+          "a Store app on another drive, with a resource id and a subfolder" },
+        { L"C:\\Program Files\\WindowsApps\\NotAPackageFolder\\App.exe",
+          L"C:\\Program Files\\WindowsApps\\NotAPackageFolder\\App.exe",
+          "a WindowsApps folder that is no package name keeps the full path" },
+        { L"C:\\Users\\u\\AppData\\Local\\Discord\\app-1.0.9187\\Discord.exe",
+          L"C:\\Users\\u\\AppData\\Local\\Discord\\app\\Discord.exe",
+          "a Squirrel version folder is reduced to app" },
+        { L"C:\\Users\\u\\AppData\\Local\\slack\\App-4.41.105-beta2\\slack.exe",
+          L"C:\\Users\\u\\AppData\\Local\\slack\\app\\slack.exe",
+          "a Squirrel prerelease folder, in any case, is reduced as well" },
+        { L"C:\\Tools\\app-foo\\x.exe", L"C:\\Tools\\app-foo\\x.exe", "app-<not a version> is left alone" },
+        { L"C:\\Tools\\app-\\x.exe", L"C:\\Tools\\app-\\x.exe", "a bare app- is left alone" },
+        { L"C:\\Tools\\app-1.\\x.exe", L"C:\\Tools\\app-1.\\x.exe", "a version with a trailing dot is left alone" },
+        { L"C:\\Tools\\myapp-1.0\\x.exe", L"C:\\Tools\\myapp-1.0\\x.exe", "only a folder named app-<version> counts" },
+        { L"C:\\Tools\\app-1.0\\bin\\x.exe", L"C:\\Tools\\app-1.0\\bin\\x.exe",
+          "the version folder must hold the exe itself" },
+        { L"", L"?", "no path is the unknown program" },
+    };
+    for (const auto& c : cases) Check(proc::ProgramKeyFromPath(c.path) == c.key, c.what);
+
+    // For every Store app running right now, the key Windows' package identity
+    // gives must equal the one read from its path, which is what old opt-outs
+    // migrate from.
+    int packaged = 0, agree = 0;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W e{ sizeof(e) };
+        for (BOOL ok = Process32FirstW(snap, &e); ok; ok = Process32NextW(snap, &e)) {
+            proc::ResolveHostExe(e.th32ProcessID, exeName, exePath, &program);
+            if (exePath.find(L"\\WindowsApps\\") == std::wstring::npos) continue;
+            ++packaged;
+            if (program == proc::ProgramKeyFromPath(exePath)) ++agree;
+        }
+        CloseHandle(snap);
+    }
+    if (packaged) Check(agree == packaged, "package identity and path give the same key for running Store apps");
+    else std::printf("  [skip] no Store app running to compare package identity with the path\n");
 
     Check(!proc::IsWow64(GetCurrentProcessId()), "the x64 test process is not WOW64");
     Check(!proc::IsWow64(0xFFFFFFFCu), "IsWow64 is false for an unknown pid");

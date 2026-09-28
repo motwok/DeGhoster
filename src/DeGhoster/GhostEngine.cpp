@@ -222,7 +222,7 @@ void GhostEngine::handleCandidate(HWND h)
 
     fi.pid = pid;
     fi.title = proc::WindowTitle(h);
-    proc::ResolveHostExe(pid, fi.exeName, fi.exePath);
+    proc::ResolveHostExe(pid, fi.exeName, fi.exePath, &fi.program);
     tracked_[h] = fi;
     if (listener_) listener_->onTrackedChanged();
     reconcile(h);

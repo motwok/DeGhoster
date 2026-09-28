@@ -25,7 +25,19 @@ std::wstring ExeDir();   // trailing backslash
 bool IsWow64(DWORD pid);
 
 // Resolve the owning host program (skips the msedgewebview2 parent chain).
-void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath);
+// `program`, if given, receives the program's opt-out key (see ProgramKeyFromPath);
+// for a packaged app it comes from the package identity Windows reports.
+void ResolveHostExe(DWORD pid, std::wstring& exeName, std::wstring& exePath,
+                    std::wstring* program = nullptr);
+
+// The key the per-program opt-out stores, stable across the program's updates:
+//   * a packaged (Store) app in "...\WindowsApps\<Name>_<Version>_<Arch>_<Res>_<Publisher>"
+//     -> "<Name>_<Publisher>\<path inside the package>" (the package family name);
+//   * a Squirrel-installed app in "...\<App>\app-<version>\<exe>" -> the same path
+//     with "app-<version>" reduced to "app";
+//   * any other program -> its full path;
+//   * no path (the process could not be read) -> "?".
+std::wstring ProgramKeyFromPath(const std::wstring& exePath);
 
 std::wstring WindowTitle(HWND);
 

@@ -61,7 +61,7 @@ already includes `--taskbar`:
 Prefer not to install? Unpack the ZIP anywhere and run `DeGhoster.exe`. No program
 files are installed, there is no Start-menu entry, and it does **not** start
 automatically at sign-in — you launch it yourself. It still remembers your
-preferences (paused state, per-window opt-outs) under
+preferences (paused state, per-program opt-outs) under
 `HKEY_CURRENT_USER\Software\DeGhoster`; delete the folder (and, if you want a clean
 slate, that registry key) to remove it.
 

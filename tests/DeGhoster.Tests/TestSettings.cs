@@ -10,9 +10,10 @@ namespace DeGhoster.Tests;
 /// A throwaway registry root for the integration tests.
 ///
 /// The tests used to drive DeGhoster against the real HKCU\Software\DeGhoster.
-/// Toggling a per-window eye writes an opt-out keyed by exe path and window
-/// title, and every run invents a fresh title, so each run left one more entry
-/// behind in the user's own settings - permanently, and without bound.
+/// Toggling an eye writes an opt-out for the simulator's program, which would
+/// switch that program off in the user's own settings; before opt-outs were per
+/// program they were keyed by window title, and every run left one more entry
+/// behind.
 ///
 /// DeGhoster reads its root from DEGHOSTER_SETTINGS_ROOT (the same hook the
 /// native unit tests use), so pointing every process the tests start at a
@@ -44,6 +45,17 @@ internal static class TestSettings
     public static void Apply(ProcessStartInfo psi, Dictionary<string, string>? extra = null)
     {
         foreach (var kv in Env(extra)) psi.Environment[kv.Key] = kv.Value;
+        // Opt-outs are per program, and every test's simulator is the same program:
+        // one a test left switched off would switch it off for every later test in
+        // this run. So each DeGhoster starts without any.
+        if (string.Equals(Path.GetFileName(psi.FileName), "DeGhoster.exe", StringComparison.OrdinalIgnoreCase))
+            ResetOptOuts();
+    }
+
+    /// <summary>Removes every per-program opt-out from the run's root.</summary>
+    public static void ResetOptOuts()
+    {
+        try { Registry.CurrentUser.DeleteSubKeyTree(Root + @"\Disabled", throwOnMissingSubKey: false); } catch { }
     }
 
     /// <summary>

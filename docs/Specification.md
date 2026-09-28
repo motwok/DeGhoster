@@ -93,7 +93,7 @@ again. This was confirmed against a real WhatsApp ghost, and a plain
 |---|---|
 | tracked | every live window of every case currently listed: ghosts and AnyDesk session windows (section 10) |
 | cloaked | tracked ghosts currently neutralized by us |
-| disabled | per-window opt-out, key `<ExePath>\|<WindowTitle>`, for every case alike |
+| disabled | per-program opt-out, keyed by the window's program (section 5), for every case alike |
 | global enabled | master switch |
 
 **Reconcile rule** per window: act ⇔ `globalEnabled && managed && windowAlive`, where
@@ -102,7 +102,9 @@ window it means enlarging its remote cursor.
 
 - **Global off** disables only the *action*. Detection keeps running and the list
   stays; entries vanish only when the window closes.
-- **Per-window off** releases that window but keeps it listed.
+- **Switching off is per program.** Switching a window off switches off its program:
+  every listed window of that program is released together and stays listed, and
+  switching any of them on again switches them all on.
 - **Hidden windows stay listed.** A ghost its app hides (e.g. when the app is
   minimized) stays in the list, shown greyed out, until the window is destroyed or
   stops being a ghost. It stays neutralized meanwhile.
@@ -111,9 +113,22 @@ window it means enlarging its remote cursor.
 ## 5. Persistence
 
 Choices survive restarts, per user (`HKCU`): the master switch, the set of
-per-window opt-outs (keyed by full executable path + window title) and the AnyDesk
-cursor zoom (section 10.7). See
+per-program opt-outs and the AnyDesk cursor zoom (section 10.7). See
 [Architecture.md](Architecture.md#persistence-registry) for the exact keys.
+
+A program is identified so that its updates keep the opt-out:
+
+| Program | Key | Example |
+|---|---|---|
+| Packaged (Store) app | package family name + path inside the package, as Windows reports it | `5319275A.WhatsAppDesktop_cv1g1gvanyjgm\WhatsApp.Root.exe` |
+| Squirrel-installed app | full path, with the `app-<version>` folder that holds the exe reduced to `app` | `C:\Users\…\Discord\app\Discord.exe` |
+| Any other program | full path | `C:\Program Files (x86)\AnyDesk\AnyDesk.exe` |
+| Process that cannot be read | `?` | all such windows share one switch |
+
+For a ghost of a WebView2 app the program is the host that owns the WebView2
+processes (section 3), not `msedgewebview2`. Opt-outs stored before switching became
+per program (`<ExePath>|<WindowTitle>`, one per window) are converted on load: each
+switches its program off.
 
 ## 6. Autostart
 
@@ -133,7 +148,7 @@ so sign-in is unobtrusive; the same switch works when launching the app directly
   in the same order as the status list.
 - **Status window:** title `DeGhoster — N Ghosts`; a list of detected windows
   (`Title (exe)`, sorted by that label; hidden ghosts greyed out), each with a
-  per-window **eye switch** shown the same way as the
+  **eye switch** (it switches the window's program, section 4) shown the same way as the
   global power switch — a green circle with an open eye when managed, a grey circle
   with a crossed-out eye when ignored; toolbar with power (green/grey), settings
   (gear, left of info), info, quit.
@@ -218,9 +233,9 @@ flowchart LR
 
 **AnyDesk windows are cases like ghosts.** Every visible top-level window of class
 `ad_win` (see step 3 below) is tracked like a ghost window (section 4): its own row in
-the status list with the eye switch, its own tray entry, counted in the title, opted
-out per window with the key `<ExePath>|<WindowTitle>` (the title carries the remote
-ID, so switching off applies per remote). Several AnyDesk windows are independent.
+the status list with the eye switch, its own tray entry, counted in the title. Like a
+ghost, it is switched off per program (sections 4 and 5), so all AnyDesk windows of
+one AnyDesk installation share their switch.
 Nothing is done to the window itself; the eye decides whether its remote cursor is
 enlarged.
 
