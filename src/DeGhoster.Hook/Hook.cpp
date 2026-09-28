@@ -89,10 +89,12 @@ static void DoCloak(HWND hwnd)
     EnterCriticalSection(&g_lock);
     PurgeDead();
     bool notify = false;
-    if (!IsTracked(hwnd) && QualifiesAsGhost(hwnd))
+    // A repeat request is re-applied and answered as well: the app may have
+    // uncloaked the window itself, and the host waits for a reply either way.
+    if (QualifiesAsGhost(hwnd))
     {
         SetCloak(hwnd, TRUE);
-        g_cloaked->push_back(hwnd);
+        if (!IsTracked(hwnd)) g_cloaked->push_back(hwnd);
         notify = true;
     }
     LeaveCriticalSection(&g_lock);

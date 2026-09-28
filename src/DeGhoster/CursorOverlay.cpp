@@ -289,6 +289,10 @@ void CursorOverlay::hide()
 {
     if (visible_ && wnd_) ShowWindow(wnd_, SW_HIDE);
     visible_ = false;
+    // Forget what the window holds: AnyDesk can destroy a cursor and get the same
+    // handle value back for its next shape, so after a hide (a failed read among
+    // them) an unchanged handle must not re-show the old picture unread.
+    shownCursor_ = nullptr;
     hideSystemCursor(false);
 }
 

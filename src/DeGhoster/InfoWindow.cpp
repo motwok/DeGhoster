@@ -51,7 +51,13 @@ HWND InfoWindow::ActiveHandle() { return s_active; }
 
 void InfoWindow::Show(HINSTANCE inst, HWND owner, const Theme& theme, UINT dpi)
 {
-    if (s_active && IsWindow(s_active)) { SetForegroundWindow(s_active); return; }
+    if (s_active && IsWindow(s_active)) {
+        // It may be hidden along with a minimized or hidden owner, and
+        // SetForegroundWindow alone would not bring it back.
+        ShowWindow(s_active, SW_SHOWNORMAL);
+        SetForegroundWindow(s_active);
+        return;
+    }
 
     static bool registered = false;
     if (!registered) {

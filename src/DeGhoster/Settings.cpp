@@ -33,6 +33,18 @@ std::wstring rootKey()
 }
 std::wstring disabledKey() { return rootKey() + L"\\Disabled"; }
 
+// Only a real REG_DWORD counts. Without the type check a hand-made string or
+// binary value of up to four bytes was reinterpreted as a number.
+bool readDword(HKEY k, const wchar_t* name, DWORD& v)
+{
+    DWORD type = 0, data = 0, sz = sizeof(data);
+    if (RegQueryValueExW(k, name, nullptr, &type, (LPBYTE)&data, &sz) != ERROR_SUCCESS ||
+        type != REG_DWORD || sz != sizeof(data))
+        return false;
+    v = data;
+    return true;
+}
+
 bool writeDword(const wchar_t* name, DWORD v)
 {
     HKEY k;
@@ -46,8 +58,11 @@ bool writeDword(const wchar_t* name, DWORD v)
 
 int Settings::ClampZoom(int percent)
 {
+    // Clamp before rounding: adding half a step first overflowed for values near
+    // INT_MAX (e.g. from a hand-edited registry) and ended up at the minimum.
+    if (percent < kZoomMin) percent = kZoomMin;
+    if (percent > kZoomMax) percent = kZoomMax;
     int z = (percent + kZoomStep / 2) / kZoomStep * kZoomStep;
-    if (z < kZoomMin) z = kZoomMin;
     if (z > kZoomMax) z = kZoomMax;
     return z;
 }
@@ -66,14 +81,12 @@ void Settings::load()
     bool haveZoom = false;
     HKEY k;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, rootKey().c_str(), 0, KEY_READ, &k) == ERROR_SUCCESS) {
-        DWORD v = 1, sz = sizeof(v);
-        if (RegQueryValueExW(k, L"GlobalEnabled", nullptr, nullptr, (LPBYTE)&v, &sz) == ERROR_SUCCESS)
+        DWORD v = 0;
+        if (readDword(k, L"GlobalEnabled", v))
             globalEnabled_ = v != 0;
-        sz = sizeof(v);
-        if (RegQueryValueExW(k, L"CursorOverlayAuto", nullptr, nullptr, (LPBYTE)&v, &sz) == ERROR_SUCCESS)
+        if (readDword(k, L"CursorOverlayAuto", v))
             cursorOverlayAuto_ = v != 0;
-        sz = sizeof(v);
-        if (RegQueryValueExW(k, L"CursorOverlayZoom", nullptr, nullptr, (LPBYTE)&v, &sz) == ERROR_SUCCESS) {
+        if (readDword(k, L"CursorOverlayZoom", v)) {
             cursorOverlayZoom_ = ClampZoom((int)v);
             haveZoom = true;
         }

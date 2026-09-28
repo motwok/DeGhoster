@@ -282,6 +282,15 @@ void GhostEngine::tick()
     expirePending();
     hooks_.pruneDead();
 
+    // A hook can vanish underneath us (its helper killed or quarantined): the DLL's
+    // detach path then uncloaks the window without any reply, and cloaked_ would
+    // keep listing a window whose ghost is back. Drop those entries so the idle
+    // pass below injects again.
+    for (auto it = cloaked_.begin(); it != cloaked_.end(); ) {
+        if (IsWindow(*it) && !pending_.count(*it) && !AppCloaked(*it)) it = cloaked_.erase(it);
+        else ++it;
+    }
+
     // Qualification is otherwise only ever tested when a window is first seen, so
     // a window that stops being a ghost (alpha back to 255, layering dropped) would
     // stay tracked and cloaked forever. No win-event covers those changes, which is
@@ -339,7 +348,15 @@ void GhostEngine::onCloaked(HWND h)
     pending_.erase(h);
     // A reply can arrive after the window was destroyed and untracked; don't
     // resurrect a stale HWND in cloaked_ (it would never be cleaned up).
-    if (!tracked_.count(h) || !IsWindow(h)) { cloaked_.erase(h); return; }
+    if (!tracked_.count(h) || !IsWindow(h)) {
+        cloaked_.erase(h);
+        // Still alive but no longer tracked: it stopped qualifying while the
+        // request was in flight, so untrack() had nothing to reveal yet. The hook
+        // has cloaked it by now; take that back, or a window that became
+        // legitimate stays hidden with nobody left who remembers it.
+        if (IsWindow(h)) PostMessageW(h, DGH_UNCLOAK, 0, 0);
+        return;
+    }
     cloaked_.insert(h);
     reconcile(h);   // re-check: state may have flipped while the reply was in flight
 }

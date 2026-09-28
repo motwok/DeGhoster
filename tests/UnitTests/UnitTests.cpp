@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <cstdio>
+#include <climits>
 
 #include "Settings.h"
 #include "Theme.h"
@@ -103,6 +104,22 @@ static void SettingsTests()
         Settings s3; s3.load();
         Check(s3.cursorOverlayZoom() == Settings::kZoomMax, "an out-of-range zoom is clamped");
     }
+    {
+        // Only a REG_DWORD counts. An empty string is two zero bytes and used to be
+        // read as 0, which switched DeGhoster off.
+        HKEY k;
+        if (Check(RegCreateKeyExW(HKEY_CURRENT_USER, root.c_str(), 0, nullptr, 0, KEY_WRITE,
+                                  nullptr, &k, nullptr) == ERROR_SUCCESS, "open the test root for writing")) {
+            const wchar_t empty[] = L"";
+            RegSetValueExW(k, L"GlobalEnabled", 0, REG_SZ, (const BYTE*)empty, sizeof(empty));
+            const BYTE zero = 0;
+            RegSetValueExW(k, L"CursorOverlayAuto", 0, REG_BINARY, &zero, 1);
+            RegCloseKey(k);
+            Settings s; s.load();
+            Check(s.globalEnabled(), "a REG_SZ GlobalEnabled is ignored, not read as 0");
+            Check(s.cursorOverlayAuto(), "a REG_BINARY CursorOverlayAuto is ignored, not read as 0");
+        }
+    }
 
     RegDeleteTreeW(HKEY_CURRENT_USER, root.c_str());
 }
@@ -115,6 +132,9 @@ static void ZoomTests()
     Check(Settings::ClampZoom(105) == 110, "ClampZoom(105) = 110");
     Check(Settings::ClampZoom(601) == 600, "ClampZoom(601) = 600");
     Check(Settings::ClampZoom(-50) == 100, "ClampZoom(-50) = 100");
+    Check(Settings::ClampZoom(INT_MAX) == 600, "ClampZoom(INT_MAX) = 600, no overflow");
+    Check(Settings::ClampZoom(INT_MAX - 1) == 600, "ClampZoom(INT_MAX - 1) = 600, no overflow");
+    Check(Settings::ClampZoom(INT_MIN) == 100, "ClampZoom(INT_MIN) = 100");
     Check(Settings::ZoomForDpi(96) == 100, "ZoomForDpi(96) = 100");
     Check(Settings::ZoomForDpi(144) == 150, "ZoomForDpi(144) = 150");
     Check(Settings::ZoomForDpi(240) == 250, "ZoomForDpi(240) = 250 (the POC machine)");

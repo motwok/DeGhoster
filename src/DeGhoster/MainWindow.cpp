@@ -47,12 +47,19 @@ constexpr UINT WM_TRAY = WM_APP + 0x40;
 constexpr UINT WM_EYE_TOGGLE = WM_APP + 0x41;
 constexpr UINT_PTR kListSubclassId = 1;
 constexpr UINT_PTR kPendingTimer = 1;
+// Re-adds the tray icon after the shell refused it (busy at logon).
+constexpr UINT_PTR kTrayRetryTimer = 2;
+constexpr UINT kTrayRetryMs = 2000;
+constexpr int kTrayRetryMax = 30;
 enum { IDC_LIST = 1001, IDC_POWER, IDC_INFO, IDC_EXIT, IDC_SETTINGS };
 enum { IDM_SHOW = 2001, IDM_ACTIVE, IDM_INFO, IDM_QUIT, IDM_SETTINGS, IDM_WIN_BASE = 3000 };
 
 // Cross-process "show yourself" ping from a second launch. RegisterWindowMessage
 // returns the same value in every process for this string.
 UINT showExistingMsg() { static UINT m = RegisterWindowMessageW(L"DeGhoster_ShowExistingInstance"); return m; }
+// Cross-process "quit" from the --quit switch. Unlike WM_COMMAND it can be let
+// through UIPI, so it also reaches an instance running elevated.
+UINT quitExistingMsg() { static UINT m = RegisterWindowMessageW(L"DeGhoster_QuitExistingInstance"); return m; }
 
 // The list view swallows the click that activates an inactive window: it emits no
 // NM_CLICK for it, so the eye needed a second click whenever the window was not
@@ -111,6 +118,11 @@ bool MainWindow::requestShutdown(DWORD timeoutMs)
         HANDLE p = pid ? OpenProcess(SYNCHRONIZE, FALSE, pid) : nullptr;
         // The tray Exit path: uncloak the windows, wind the helpers down, quit.
         PostMessageW(h, WM_COMMAND, IDC_EXIT, 0);
+        // UIPI drops WM_COMMAND from a caller below an elevated instance's
+        // integrity; the registered message is allowed through. Whichever arrives
+        // first closes the window, and the other then has no window left to reach.
+        // WM_COMMAND stays for instances that predate the registered message.
+        PostMessageW(h, quitExistingMsg(), 0, 0);
         if (p) {
             const ULONGLONG now = GetTickCount64();
             WaitForSingleObject(p, now < deadline ? (DWORD)(deadline - now) : 0);
@@ -170,6 +182,10 @@ bool MainWindow::create(HINSTANCE inst, bool startHidden)
     // in case we ever run elevated.
     taskbarCreatedMsg_ = RegisterWindowMessageW(L"TaskbarCreated");
     if (taskbarCreatedMsg_) ChangeWindowMessageFilterEx(h, taskbarCreatedMsg_, MSGFLT_ALLOW, nullptr);
+    // A second launch and the installer's --quit run at normal integrity; when we
+    // run elevated, UIPI drops their messages unless they are allowed here.
+    ChangeWindowMessageFilterEx(h, showExistingMsg(), MSGFLT_ALLOW, nullptr);
+    ChangeWindowMessageFilterEx(h, quitExistingMsg(), MSGFLT_ALLOW, nullptr);
 
     applyFont();
     settings_.load();
@@ -500,7 +516,26 @@ void MainWindow::addTray()
     nid_.hIcon = (HICON)LoadImageW(inst_, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
                                    GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
     lstrcpynW(nid_.szTip, app::Name, ARRAYSIZE(nid_.szTip));
-    Shell_NotifyIconW(NIM_ADD, &nid_);
+    KillTimer(hwnd_, kTrayRetryTimer);
+    if (Shell_NotifyIconW(NIM_ADD, &nid_)) return;
+    // The shell can still be busy at logon and time the request out. No
+    // TaskbarCreated follows then, so without a retry the app would run with
+    // neither a window nor a tray icon for the whole session.
+    trayRetries_ = 0;
+    SetTimer(hwnd_, kTrayRetryTimer, kTrayRetryMs, nullptr);
+}
+
+void MainWindow::retryTray()
+{
+    // The add may have gone through despite the timeout, so probe with
+    // NIM_MODIFY first, as the Shell_NotifyIcon documentation advises.
+    nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    if (Shell_NotifyIconW(NIM_MODIFY, &nid_) || Shell_NotifyIconW(NIM_ADD, &nid_)) {
+        KillTimer(hwnd_, kTrayRetryTimer);
+        updateStatus();
+    } else if (++trayRetries_ >= kTrayRetryMax) {
+        KillTimer(hwnd_, kTrayRetryTimer);   // a later Explorer start sends TaskbarCreated
+    }
 }
 
 void MainWindow::warnHooksMissing()
@@ -623,6 +658,7 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_TIMER:
         if (wp == kPendingTimer) engine_.tick();
+        else if (wp == kTrayRetryTimer) retryTray();
         return 0;
 
     case WM_SETTINGCHANGE:
@@ -658,6 +694,7 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_DESTROY:
         KillTimer(hwnd_, kPendingTimer);
+        KillTimer(hwnd_, kTrayRetryTimer);
         WTSUnRegisterSessionNotification(hwnd_);
         overlay_.destroy();   // hides the overlay and gives the real cursor back
         engine_.stop();
@@ -673,6 +710,11 @@ LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
     }
     if (msg == showExistingMsg()) {   // a second launch asked us to surface
         showWindow();
+        return 0;
+    }
+    if (msg == quitExistingMsg() && msg) {   // --quit: the tray Exit path
+        reallyExit_ = true;
+        DestroyWindow(hwnd_);
         return 0;
     }
     return DefWindowProcW(hwnd_, msg, wp, lp);

@@ -68,6 +68,7 @@ private:
     void showWindow();
     void showTrayMenu();
     void addTray();
+    void retryTray();          // timer: re-add a tray icon the shell refused
     void warnHooksMissing();   // balloon when the x64 hook DLL failed to load
 
     void setGlobalEnabled(bool);
@@ -84,6 +85,7 @@ private:
     NOTIFYICONDATAW nid_{};
     UINT dpi_ = 96;
     UINT taskbarCreatedMsg_ = 0;   // "TaskbarCreated" broadcast: re-add the tray icon
+    int trayRetries_ = 0;
     bool reallyExit_ = false;
 
     Theme theme_;

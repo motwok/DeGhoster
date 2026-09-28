@@ -103,11 +103,13 @@ HookInjector::Inject HookInjector::ensure(DWORD threadId, DWORD pid, HWND host)
             if (GetTickCount64() - e.startedAt < kHelperReadyTimeoutMs)
                 return Inject::Pending;      // still coming up; ask again next tick
             closeHelper(e);
+            nudge(threadId);                 // let the target unmap the hook DLL
             helpers_.erase(p);
             return Inject::Failed;           // never signalled: let the pid cool down
         }
         const bool diedOnUs = !alive;
         closeHelper(e);
+        nudge(threadId);
         helpers_.erase(p);
         // A helper that died on us is reported as a failure so the caller's pid
         // cooldown throttles the retry. A live helper bound to a recycled thread
