@@ -26,6 +26,24 @@ function Resolve-OpenCppCoverage {
     throw "OpenCppCoverage not found. Install it with:  choco install opencppcoverage"
 }
 
+# DeGhoster is single-instance: started while another copy runs, the measured one
+# hands off to it and exits at once, and the run records nothing but startup code
+# - which the Manual test check would still accept as current. So refuse to start.
+$running = @(Get-CimInstance Win32_Process -Filter "Name = 'DeGhoster.exe'" -ErrorAction SilentlyContinue)
+if ($running.Count) {
+    $lines = $running | ForEach-Object {
+        $path = if ($_.ExecutablePath) { $_.ExecutablePath } else { '(path not readable)' }
+        "  PID $($_.ProcessId): $path"
+    }
+    $quit = $running | Where-Object { $_.ExecutablePath } | Select-Object -ExpandProperty ExecutablePath -Unique |
+            ForEach-Object { "  & `"$_`" --quit" }
+    Write-Host "DeGhoster is already running:" -ForegroundColor Red
+    $lines | ForEach-Object { Write-Host $_ }
+    Write-Host "The measured copy would hand off to it and exit at once. Quit it first, e.g.:" -ForegroundColor Red
+    $quit | ForEach-Object { Write-Host $_ }
+    exit 1
+}
+
 $cmake = Resolve-CMake
 $occ   = Resolve-OpenCppCoverage
 $out   = Join-Path $repo 'coverage'
