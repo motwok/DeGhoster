@@ -35,8 +35,10 @@ constexpr wchar_t kTargetClass[] = L"Chrome_WidgetWin_1";
 // `ignoreCloak` skips the not-cloaked test so an already-fixed window can still be
 // re-validated: it is cloaked precisely because we cloaked it, and testing that bit
 // would report every window we fixed as "no longer a ghost" the moment we fixed it.
-// `ignoreVisible` does the same for visibility: a ghost its app hid (minimized)
-// is still the same ghost and stays tracked until it is destroyed.
+// `ignoreVisible` does the same for visibility and position: a ghost its app hid
+// (minimized) is still the same ghost and stays tracked until it is destroyed.
+// Minimizing WhatsApp also parks its ghost at -32000,-32000, off every screen, so
+// the on-screen test must not drop it either.
 bool IsBlocker(HWND h, bool ignoreCloak = false, bool ignoreVisible = false)
 {
     if (!ignoreVisible && !IsWindowVisible(h)) return false;
@@ -55,7 +57,7 @@ bool IsBlocker(HWND h, bool ignoreCloak = false, bool ignoreVisible = false)
     if (!GetWindowRect(h, &r) || r.right <= r.left || r.bottom <= r.top) return false;
     int vx = GetSystemMetrics(SM_XVIRTUALSCREEN), vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
     int vr = vx + GetSystemMetrics(SM_CXVIRTUALSCREEN), vb = vy + GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    if (!(r.right > vx && r.left < vr && r.bottom > vy && r.top < vb)) return false;
+    if (!ignoreVisible && !(r.right > vx && r.left < vr && r.bottom > vy && r.top < vb)) return false;
 
     if (!ignoreCloak) {
         int cloak = 0;

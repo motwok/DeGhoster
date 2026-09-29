@@ -114,9 +114,11 @@ tracked as one of two kinds (`FixInfo::Kind`):
   window its events have not reported yet.
 
 The one-second `tick()` drops a window only when it is destroyed or, for a ghost,
-stops meeting the ghost criteria. Visibility is deliberately not one of them: a
-ghost its app hid (minimized) stays tracked and neutralized, marked `hidden` and
-drawn greyed out in the list, until it is destroyed.
+stops meeting the ghost criteria. Visibility and position are deliberately not
+among them: a ghost its app hid (minimized) stays tracked and neutralized, marked
+`hidden` and drawn greyed out in the list, until it is destroyed. Minimizing
+WhatsApp also parks its ghost at -32000,-32000, off every screen, so the on-screen
+test only applies when a window is first detected.
 
 ## Why a ghost eats clicks
 
