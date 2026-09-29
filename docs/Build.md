@@ -263,7 +263,10 @@ Because the branch must also be up to date with `master` before it merges, the o
 for a PR with code changes is:
 
 1. Merge `master` into the branch (only needed if `master` has moved).
-2. Run `.\tests\coverage-manual.ps1` on that state.
+2. Quit any running DeGhoster, including an installed copy in the tray, then run
+   `.\tests\coverage-manual.ps1` on that state. The script refuses to start while
+   DeGhoster runs: the measured copy would hand off to the running one and exit at
+   once, recording nothing but startup code.
 3. Commit `tests\coverage-data` and push.
 
 If `master` gets new code before the merge, the branch has to merge it and the manual

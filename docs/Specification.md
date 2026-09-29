@@ -107,7 +107,9 @@ window it means enlarging its remote cursor.
   switching any of them on again switches them all on.
 - **Hidden windows stay listed.** A ghost its app hides (e.g. when the app is
   minimized) stays in the list, shown greyed out, until the window is destroyed or
-  stops being a ghost. It stays neutralized meanwhile.
+  stops being a ghost. Being hidden or moved off screen does not count as that
+  (a minimized WhatsApp parks its ghost at -32000,-32000). It stays neutralized
+  meanwhile.
 - The title count `N Ghosts` counts every listed window of every case.
 
 ## 5. Persistence

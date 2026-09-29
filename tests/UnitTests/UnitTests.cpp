@@ -700,11 +700,16 @@ static void GhostEngineTests()
     Check(eng.trackAnyDesk(host) == nullptr, "an ordinary window is not tracked");
 
     // Hidden (the app minimized): stays listed, marked, and comes back unmarked.
+    // WhatsApp does not only hide its ghost when minimized, it also parks it at
+    // -32000,-32000, where Windows keeps minimized windows - off every screen.
+    RECT shown{}; GetWindowRect(ghost, &shown);
     ShowWindow(ghost, SW_HIDE);
+    SetWindowPos(ghost, nullptr, -32000, -32000, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     ShowWindow(ad, SW_HIDE);
     eng.tick();
-    Check(t.count(ghost) && t.at(ghost).hidden, "a hidden ghost stays listed, marked hidden");
+    Check(t.count(ghost) && t.at(ghost).hidden, "a hidden ghost parked off screen stays listed, marked hidden");
     Check(t.count(ad) && t.at(ad).hidden, "a hidden AnyDesk window stays listed, marked hidden");
+    SetWindowPos(ghost, nullptr, shown.left, shown.top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     ShowWindow(ghost, SW_SHOWNA);
     eng.tick();
     Check(t.count(ghost) && !t.at(ghost).hidden, "shown again, the ghost is no longer marked");
