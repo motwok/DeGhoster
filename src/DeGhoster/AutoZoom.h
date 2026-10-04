@@ -21,7 +21,7 @@
 #include <deque>
 #include <unordered_map>
 
-// The automatic zoom of one AnyDesk window (Specification.md section 10.4). The
+// The automatic zoom of one session window (Specification.md section 10.4). The
 // remote cursor that was shown the longest during the last kWindowMs is taken as
 // the reference - in practice the normal arrow - and the zoom makes it as tall as
 // the local arrow. No shape recognition: only how long each picture is on screen

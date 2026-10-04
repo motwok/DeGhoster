@@ -29,7 +29,7 @@ namespace {
 constexpr wchar_t kClass[] = L"DeGhosterCursorOverlay";
 
 // Every standard cursor id. AnyDesk's own UI (title bar, tabs, menus, settings)
-// uses these; the remote cursor is always one AnyDesk created itself.
+// uses these; the remote cursor is always one the client created itself.
 constexpr int kSystemCursorIds[] = {
     32512 /*ARROW*/, 32513 /*IBEAM*/, 32514 /*WAIT*/, 32515 /*CROSS*/, 32516 /*UPARROW*/,
     32640 /*SIZE*/, 32641 /*ICON*/, 32642 /*SIZENWSE*/, 32643 /*SIZENESW*/, 32644 /*SIZEWE*/,
@@ -56,6 +56,22 @@ bool CursorOverlay::IsAnyDeskClass(const wchar_t* cls)
     constexpr wchar_t kBase[] = L"ad_win";
     constexpr size_t n = ARRAYSIZE(kBase) - 1;
     return wcsncmp(cls, kBase, n) == 0 && (cls[n] == L'\0' || cls[n] == L'#');
+}
+
+bool CursorOverlay::IsRdpInputChain(const wchar_t* cls, const wchar_t* parent, const wchar_t* grandparent)
+{
+    return cls && parent && grandparent && wcscmp(cls, L"IHWindowClass") == 0 &&
+           wcscmp(parent, L"UIContainerClass") == 0 && wcscmp(grandparent, L"UIMainClass") == 0;
+}
+
+bool CursorOverlay::IsRdpInputWindow(HWND h)
+{
+    // GA_PARENT, not GetParent: the chain is one of child windows, and GetParent
+    // would hand back the owner of a top-level window instead.
+    wchar_t cls[3][32] = {};
+    for (int i = 0; i < 3; ++i, h = GetAncestor(h, GA_PARENT))
+        if (!h || !GetClassNameW(h, cls[i], ARRAYSIZE(cls[i]))) return false;
+    return IsRdpInputChain(cls[0], cls[1], cls[2]);
 }
 
 bool CursorOverlay::create(HINSTANCE inst)
@@ -177,10 +193,15 @@ void CursorOverlay::evaluate(bool shapeChanged)
 
     POINT pt;
     if (!GetCursorPos(&pt)) pt = ci.ptScreenPos;
+    // Over an AnyDesk session window (its root has AnyDesk's class) or over the
+    // input window of an RDP control, whatever program hosts it. Either way the
+    // session window is the root: that is what the status list shows.
     HWND under = WindowFromPoint(pt);
     HWND root = under ? GetAncestor(under, GA_ROOT) : nullptr;
     wchar_t cls[64] = L"";
-    if (!root || !GetClassNameW(root, cls, ARRAYSIZE(cls)) || !IsAnyDeskClass(cls)) { hide(); return; }
+    if (!root) { hide(); return; }
+    const bool anyDesk = GetClassNameW(root, cls, ARRAYSIZE(cls)) && IsAnyDeskClass(cls);
+    if (!anyDesk && !IsRdpInputWindow(under)) { hide(); return; }
     if (filter_ && !filter_(root)) { hide(); return; }
 
     const UINT dpi = DpiAt(pt);

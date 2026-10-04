@@ -36,7 +36,7 @@
            Compressed="yes"
            InstallerVersion="500">
 
-    <SummaryInformation Description="DeGhoster - invisible ghost-window neutralizer and AnyDesk cursor enlarger"
+    <SummaryInformation Description="DeGhoster - invisible ghost-window neutralizer and remote cursor enlarger"
                         Manufacturer="Emmo Emminghaus" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of DeGhoster is already installed." />
@@ -176,7 +176,7 @@
     <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder"
                Guid="0CE34FA3-2A36-4AAC-B32E-0426F8F2FAFB">
       <Shortcut Id="sc_DeGhoster" Name="DeGhoster"
-                Description="Neutralizes invisible click-eating ghost windows and enlarges the AnyDesk remote cursor"
+                Description="Neutralizes invisible click-eating ghost windows and enlarges the AnyDesk and Remote Desktop remote cursor"
                 Target="[#fil_DeGhosterExe]"
                 WorkingDirectory="APPLICATIONFOLDER"
                 Icon="DeGhosterIcon" />

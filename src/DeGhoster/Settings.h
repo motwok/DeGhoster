@@ -21,7 +21,7 @@
 #include <vector>
 
 // HKCU\Software\DeGhoster: global switch, per-program opt-outs (FixInfo::disableKey,
-// for ghosts and AnyDesk windows alike) and the AnyDesk cursor overlay's zoom.
+// for ghosts and session windows alike) and the remote cursor overlay's zoom.
 class Settings {
 public:
     static constexpr int kZoomMin = 100, kZoomMax = 600, kZoomStep = 10;
@@ -34,7 +34,7 @@ public:
     bool isManaged(const std::wstring& key) const;
     void setManaged(const std::wstring& key, bool managed);
 
-    // Automatic zoom per AnyDesk window (default on); the fixed zoom below applies
+    // Automatic zoom per session window (default on); the fixed zoom below applies
     // when it is off.
     bool cursorOverlayAuto() const { return cursorOverlayAuto_; }
     void setCursorOverlayAuto(bool);

@@ -235,6 +235,26 @@ static void AnyDeskClassTests()
     Check(!CursorOverlay::IsAnyDeskClass(nullptr), "null does not match");
 }
 
+static void RdpClassTests()
+{
+    std::printf("RDP class tests\n");
+    Check(CursorOverlay::IsRdpInputChain(L"IHWindowClass", L"UIContainerClass", L"UIMainClass"),
+          "the RDP control's input window matches");
+    Check(!CursorOverlay::IsRdpInputChain(L"OPContainerClass", L"UIContainerClass", L"UIMainClass"),
+          "the output painter does not match");
+    Check(!CursorOverlay::IsRdpInputChain(L"IHWindowClass", L"UIMainClass", L"UIContainerClass"),
+          "the parents in another order do not match");
+    Check(!CursorOverlay::IsRdpInputChain(L"IHWindowClass", L"UIContainerClass", L"TscShellAxHostClass"),
+          "a wrong grandparent does not match");
+    Check(!CursorOverlay::IsRdpInputChain(L"ihwindowclass", L"UIContainerClass", L"UIMainClass"),
+          "the match is case-sensitive");
+    Check(!CursorOverlay::IsRdpInputChain(L"IHWindowClass#1", L"UIContainerClass", L"UIMainClass"),
+          "a suffix does not match");
+    Check(!CursorOverlay::IsRdpInputChain(L"IHWindowClass", L"UIContainerClass", nullptr),
+          "a missing grandparent does not match");
+    Check(!CursorOverlay::IsRdpInputChain(nullptr, nullptr, nullptr), "null does not match");
+}
+
 static HCURSOR MakeCursor(int w, int h, const uint32_t* argb, const BYTE* andBits, POINT hot, bool mono)
 {
     HBITMAP color = nullptr;
@@ -665,6 +685,22 @@ static HWND MakeTopLevel(const wchar_t* cls, const wchar_t* title, DWORD ex)
     return h;
 }
 
+// A chain of visible child windows, outermost first, below `parent`; returns the
+// innermost one.
+static HWND MakeChain(HWND parent, std::initializer_list<const wchar_t*> classes)
+{
+    for (const wchar_t* cls : classes) {
+        WNDCLASSEXW wc{ sizeof(wc) };
+        wc.lpfnWndProc = DefWindowProcW;
+        wc.hInstance = GetModuleHandleW(nullptr);
+        wc.lpszClassName = cls;
+        RegisterClassExW(&wc);   // fails harmlessly when already registered
+        parent = CreateWindowExW(0, cls, L"", WS_CHILD | WS_VISIBLE, 0, 0, 100, 80,
+                                 parent, nullptr, wc.hInstance, nullptr);
+    }
+    return parent;
+}
+
 static void GhostEngineTests()
 {
     std::printf("GhostEngine tests\n");
@@ -695,9 +731,9 @@ static void GhostEngineTests()
     Check(t.count(ad) && t.count(ghost) && t.at(ad).disableKey() == t.at(ghost).disableKey() &&
           t.at(ad).disableKey().find(L'|') == std::wstring::npos && t.at(ad).disableKey() != L"?",
           "windows are switched off per program, AnyDesk windows and ghosts alike");
-    Check(t.count(ad) && eng.trackAnyDesk(ad) == &t.at(ad), "trackAnyDesk finds the tracked window");
-    Check(eng.trackAnyDesk(ghost) == nullptr, "a ghost is not an AnyDesk window");
-    Check(eng.trackAnyDesk(host) == nullptr, "an ordinary window is not tracked");
+    Check(t.count(ad) && eng.trackCursorWindow(ad) == &t.at(ad), "trackCursorWindow finds the tracked window");
+    Check(eng.trackCursorWindow(ghost) == nullptr, "a ghost is not an AnyDesk window");
+    Check(eng.trackCursorWindow(host) == nullptr, "an ordinary window is not tracked");
 
     // Hidden (the app minimized): stays listed, marked, and comes back unmarked.
     // WhatsApp does not only hide its ghost when minimized, it also parks it at
@@ -717,7 +753,41 @@ static void GhostEngineTests()
     // The cursor can reach a new AnyDesk window before any of its events do.
     HWND ad2 = MakeTopLevel(L"ad_win#9", L"987 654 321 - AnyDesk", 0);
     ShowWindow(ad2, SW_SHOWNA);
-    Check(eng.trackAnyDesk(ad2) != nullptr && t.count(ad2), "trackAnyDesk picks up a new AnyDesk window");
+    Check(eng.trackCursorWindow(ad2) != nullptr && t.count(ad2), "trackCursorWindow picks up a new AnyDesk window");
+
+    // A program hosting the RDP control: listed is its top-level window. mstsc
+    // creates the control while its window is still hidden.
+    HWND rdp = MakeTopLevel(L"DeGhosterTest_RdpHost", L"server - Remote Desktop Connection", 0);
+    HWND rdpMain = MakeChain(rdp, { L"UIMainClass" });
+    HWND ih = MakeChain(rdpMain, { L"UIContainerClass", L"IHWindowClass" });
+    Check(CursorOverlay::IsRdpInputWindow(ih), "the live chain is an RDP input window");
+    Check(!CursorOverlay::IsRdpInputWindow(rdpMain), "its main window is not");
+    Check(eng.trackCursorWindow(rdp) == nullptr && !t.count(rdp), "a hidden RDP host is not listed");
+    ShowWindow(rdp, SW_SHOWNA);
+    const FixInfo* fr = eng.trackCursorWindow(rdp);
+    Check(fr && fr->kind == FixInfo::Kind::Rdp && t.count(rdp), "a shown RDP host is listed as a case of its own");
+    Check(!t.count(ih) && !t.count(rdpMain), "the host window is listed, not the control's windows");
+    Check(t.count(rdp) && t.count(ad2) && t.at(rdp).disableKey() == t.at(ad2).disableKey(),
+          "an RDP window is switched per program like every other case");
+
+    // The same classes in a wrong chain are no RDP control.
+    HWND bad1 = MakeTopLevel(L"DeGhosterTest_RdpBad1", L"bad 1", 0);
+    MakeChain(bad1, { L"UIContainerClass", L"UIMainClass", L"IHWindowClass" });
+    HWND bad2 = MakeTopLevel(L"DeGhosterTest_RdpBad2", L"bad 2", 0);
+    MakeChain(bad2, { L"UIMainClass", L"IHWindowClass" });
+    ShowWindow(bad1, SW_SHOWNA);
+    ShowWindow(bad2, SW_SHOWNA);
+    Check(eng.trackCursorWindow(bad1) == nullptr, "the parents in another order are no RDP control");
+    Check(eng.trackCursorWindow(bad2) == nullptr, "an input window without its container is no RDP control");
+
+    // A connection manager closing its last session keeps its window, which is
+    // then no RDP window any more.
+    DestroyWindow(rdpMain);
+    eng.tick();
+    Check(!t.count(rdp), "an RDP host without a control leaves the list");
+    DestroyWindow(rdp);
+    DestroyWindow(bad1);
+    DestroyWindow(bad2);
 
     // Gone, or no longer a ghost: dropped.
     DestroyWindow(ad);
@@ -760,11 +830,18 @@ static void CursorOverlayTests()
         Check(SendMessageW(w, WM_NCHITTEST, 0, 0) == HTTRANSPARENT, "the overlay never takes a hit test");
         Check(SendMessageW(w, WM_MOUSEACTIVATE, 0, 0) == MA_NOACTIVATE, "the overlay never activates");
     }
-    // The cursor is not over an AnyDesk window here, so it must stay hidden.
+    // The cursor is not over a session window here, so it must stay hidden -
+    // unless the developer's own AnyDesk or RDP session happens to be under it.
     ov.setZoom(300);
     ov.setEnabled(true);
     Pump();
-    Check(!ov.visible(), "enabled but not over AnyDesk: hidden");
+    POINT pt{};
+    GetCursorPos(&pt);
+    HWND under = WindowFromPoint(pt);
+    wchar_t rootCls[64] = L"";
+    if (under) GetClassNameW(GetAncestor(under, GA_ROOT), rootCls, 64);
+    if (!CursorOverlay::IsRdpInputWindow(under) && !CursorOverlay::IsAnyDeskClass(rootCls))
+        Check(!ov.visible(), "enabled but not over a session: hidden");
     ov.setSessionLocked(true);
     Check(!ov.visible(), "locked: hidden");
     ov.setSessionLocked(false);
@@ -1084,6 +1161,7 @@ int main()
     ZoomTests();
     AutoZoomTests();
     AnyDeskClassTests();
+    RdpClassTests();
     CursorImageTests();
     ControlTests();
     SettingsWindowTests();

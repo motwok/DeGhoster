@@ -41,11 +41,11 @@ public:
     void setListener(Listener* l) { listener_ = l; }
 
     const std::unordered_map<HWND, FixInfo>& tracked() const { return tracked_; }
-    // Every listed window of every case (ghosts and AnyDesk windows).
+    // Every listed window of every case (ghosts, AnyDesk and RDP windows).
     int ghostCount() const { return (int)tracked_.size(); }
-    // The tracked AnyDesk window `h`, tracking it now if it qualifies; null if it
-    // is not an AnyDesk session window.
-    const FixInfo* trackAnyDesk(HWND h);
+    // The tracked session window `h` (AnyDesk or RDP) whose remote cursor the
+    // overlay enlarges, tracking it now if it qualifies; null if it is neither.
+    const FixInfo* trackCursorWindow(HWND h);
 
     void refreshAll();
     // Periodic upkeep on the host's 1 s timer: expire unanswered requests, release
@@ -61,7 +61,10 @@ public:
 private:
     static void CALLBACK winEventThunk(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
     void onWinEvent(DWORD event, HWND);
-    void handleCandidate(HWND);
+    // `deep` also searches a top-level window's children for an RDP control; only
+    // where that is rare enough to afford (startup, a window being shown, the
+    // cursor reaching it), not on the periodic sweep.
+    void handleCandidate(HWND, bool deep = false);
     void updateHidden(HWND);   // refresh FixInfo::hidden; notifies on a change
     void reconcile(HWND);
     void uncloakAllAndWait(DWORD budgetMs);

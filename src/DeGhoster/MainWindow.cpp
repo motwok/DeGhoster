@@ -202,13 +202,13 @@ bool MainWindow::create(HINSTANCE inst, bool startHidden)
     // Backstop for cloak/uncloak requests the hook never answers: drop them so a
     // window can't stay stuck in "pending" forever.
     SetTimer(h, kPendingTimer, 1000, nullptr);
-    // The AnyDesk cursor overlay: its own window and WinEvent subscription, and
+    // The remote cursor overlay: its own window and WinEvent subscription, and
     // lock/unlock notifications so the real cursor is restored on the lock screen.
-    // Each AnyDesk window is a listed case with its own eye, like a ghost; the
-    // overlay only enlarges the cursor over the windows that are switched on.
+    // Each AnyDesk and RDP window is a listed case with its own eye, like a ghost;
+    // the overlay only enlarges the cursor over the windows that are switched on.
     overlay_.create(inst);
     overlay_.setWindowFilter([this](HWND root) {
-        const FixInfo* fi = engine_.trackAnyDesk(root);
+        const FixInfo* fi = engine_.trackCursorWindow(root);
         return fi && settings_.isManaged(fi->disableKey());
     });
     applyCursorOverlay();
@@ -494,7 +494,7 @@ void MainWindow::toggleWindow(HWND ghost)
     std::wstring key = it->second.disableKey();
     settings_.setManaged(key, !settings_.isManaged(key));
     engine_.refreshAll();
-    overlay_.refresh();   // an AnyDesk window switched under the cursor
+    overlay_.refresh();   // a session window switched under the cursor
     InvalidateRect(list_, nullptr, FALSE);
 }
 

@@ -5,7 +5,7 @@
 
   *Who you gonna call? Bustin' invisible, click-eating window ghosts.*
 
-  **Neutralizes invisible WebView2/Chromium "ghost windows" that intercept your desktop clicks — and enlarges the tiny remote cursor in AnyDesk sessions.**
+  **Neutralizes invisible WebView2/Chromium "ghost windows" that intercept your desktop clicks — and enlarges the tiny remote cursor in AnyDesk and Remote Desktop sessions.**
 
   [![Build](https://img.shields.io/github/actions/workflow/status/motwok/DeGhoster/build.yml?branch=master&style=flat-square)](https://github.com/motwok/DeGhoster/actions/workflows/build.yml)
   [![Latest release](https://img.shields.io/github/v/release/motwok/DeGhoster?sort=semver&style=flat-square)](https://github.com/motwok/DeGhoster/releases/latest)
@@ -51,6 +51,14 @@ hides the small original — a click-through overlay with an adjustable zoom, no
 injection into AnyDesk, nothing changed in AnyDesk or Windows. Switching it off
 removes every effect at once.
 
+**Remote Desktop cursor.** Remote Desktop (RDP) shows the remote computer's cursor
+at the size the *remote* is set to, so on a high-DPI client it looks just as tiny.
+That is not an RDP defect — the pointer can be enlarged on the remote — but doing so
+on every computer and server you connect to is tedious. DeGhoster enlarges it once,
+on the client, with the same overlay, for every program built on Windows' RDP
+control: Remote Desktop Connection, WSLg (Linux apps under WSL), Hyper-V VMConnect
+and connection managers such as RDCMan or mRemoteNG.
+
 Further issues that can be detected precisely and mitigated reversibly may be added
 over time.
 
@@ -91,8 +99,8 @@ Both artifacts are produced by [`build.ps1`](build.ps1) into `dist\` — see
   running.
 - **Per-program on/off:** the eye on each row (green = managed, grey = ignored)
   switches all windows of that program together; program updates keep the choice.
-- **AnyDesk cursor:** every AnyDesk window is listed with its own eye like a ghost
-  window (on by default). The size is automatic — as large as your own pointer, per
+- **Remote cursor:** every AnyDesk and Remote Desktop window is listed with its own
+  eye like a ghost window (on by default). The size is automatic — as large as your own pointer, per
   window; a fixed zoom (100–600 %) is in the **Settings** window (gear button or tray
   menu).
 
