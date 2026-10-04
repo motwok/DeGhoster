@@ -22,7 +22,7 @@
 
 // Modeless, single-instance settings window (Specification.md section 10.6).
 // Changes apply and are saved at once; the owner is told with
-// WM_SETTINGS_CHANGED so it can apply them. Built in sections; "AnyDesk cursor"
+// WM_SETTINGS_CHANGED so it can apply them. Built in sections; "Remote cursor"
 // is the first one.
 class SettingsWindow {
 public:

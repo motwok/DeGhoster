@@ -23,11 +23,12 @@
 #include "AutoZoom.h"
 #include "CursorImage.h"
 
-// The "ghost cursor" for AnyDesk sessions (Specification.md section 10): a
-// click-through, topmost, per-pixel-alpha window that shows an enlarged copy of
-// the remote cursor AnyDesk sets on its session window, while the small original
-// is hidden with the Magnification API. Driven by out-of-context WinEvents for
-// OBJID_CURSOR on the UI thread; no polling, no injection. One instance per process.
+// The "ghost cursor" for AnyDesk and Remote Desktop sessions (Specification.md
+// section 10): a click-through, topmost, per-pixel-alpha window that shows an
+// enlarged copy of the remote cursor the client sets on its session window, while
+// the small original is hidden with the Magnification API. Driven by out-of-context
+// WinEvents for OBJID_CURSOR on the UI thread; no polling, no injection. One
+// instance per process.
 class CursorOverlay {
 public:
     CursorOverlay() = default;
@@ -41,15 +42,15 @@ public:
 
     // The global switch. Off: hidden, cursor restored, events unhooked.
     void setEnabled(bool on);
-    // Decides per AnyDesk window (the root window under the cursor) whether its
+    // Decides per session window (the root window under the cursor) whether its
     // cursor is enlarged: the window's own on/off in the status list. Without a
-    // filter every AnyDesk window qualifies.
+    // filter every session window qualifies.
     void setWindowFilter(std::function<bool(HWND root)> filter) { filter_ = std::move(filter); }
     // Re-evaluates now, e.g. after a window was switched on or off.
     void refresh();
-    // Zoom in percent; takes effect immediately (live preview while over AnyDesk).
+    // Zoom in percent; takes effect immediately (live preview while over a session).
     void setZoom(int percent);
-    // Automatic size: per AnyDesk window, the remote cursor shown the longest is
+    // Automatic size: per session window, the remote cursor shown the longest is
     // made as tall as the local arrow (AutoZoom). The fixed zoom is the fallback
     // until a window has shown a cursor.
     void setAuto(bool on);
@@ -62,6 +63,13 @@ public:
     // True for AnyDesk's session window class: "ad_win", with AnyDesk's running
     // "#<n>" suffix (and anything after it) ignored.
     static bool IsAnyDeskClass(const wchar_t* cls);
+    // True for the input window of the Microsoft RDP control (mstscax.dll and its
+    // fork rdclientax.dll), given its class and those of its parent and
+    // grandparent: IHWindowClass in UIContainerClass in UIMainClass. Exact and
+    // case-sensitive; any of them may be null.
+    static bool IsRdpInputChain(const wchar_t* cls, const wchar_t* parent, const wchar_t* grandparent);
+    // IsRdpInputChain for a live window and its two ancestors.
+    static bool IsRdpInputWindow(HWND);
 
 private:
     static void CALLBACK OnWinEvent(HWINEVENTHOOK, DWORD event, HWND, LONG idObject,
@@ -83,7 +91,7 @@ private:
     bool enabled_ = false, locked_ = false;
     int zoom_ = 100;
     bool auto_ = false;
-    std::unordered_map<HWND, AutoZoom> autos_;   // per AnyDesk window
+    std::unordered_map<HWND, AutoZoom> autos_;   // per session window
     std::unordered_map<UINT, int> targets_;      // dpi -> local arrow height
 
     // The current cursor's picture at source size, read once per shape.

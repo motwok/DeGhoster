@@ -146,18 +146,24 @@ Integration tests live in `tests/` and prove the actual neutralization end to en
 - **`tests/CursorSim`** (C++, `build\CursorSim64.exe` / `CursorSim32.exe`) simulates an
   AnyDesk session window: class `ad_win#1`, custom cursors created with
   `CreateIconIndirect` (colour with alpha, colour without alpha, monochrome with
-  inverting pixels, or a rapid switch between two), a system-cursor band at the top
-  like AnyDesk's own UI, and a click counter in the title.
+  inverting pixels, a rapid switch between two, or an animation of 20 frames with a
+  cursor handle each), a system-cursor band at the top like AnyDesk's own UI, and a
+  click counter in the title. With `--rdp` it plays a program hosting the RDP
+  control instead: a top-level window holding the child chain `UIMainClass` >
+  `UIContainerClass` > `IHWindowClass` (plus `OPContainerClass`), or any other chain
+  for the negative cases, with the custom cursors on the innermost window.
 - **`tests/DeGhoster.Tests`** (xUnit, .NET) launches GhostSim + DeGhoster and asserts
   the window becomes `DWMWA_CLOAKED`. The `[Theory]` runs both bitnesses, so it covers
   the x64 (Helper64 → Hook64) and x86 (Helper32 → Hook32) injection paths.
   `CursorOverlayTests` drive DeGhoster against CursorSim and move the real mouse
   cursor: overlay size and hotspot alignment, every cursor kind, no overlay over
-  system cursors or other windows, click-through, live settings and `--quit`. On a
+  system cursors or other windows, click-through, live settings and `--quit`, and the
+  same for a simulated RDP host (wrong class chains, AnyDesk and RDP switched
+  independently, an animated cursor followed frame by frame). On a
   desktop without a visible cursor (no mouse attached) those tests are skipped.
 - **`tests/UnitTests`** (native) test the host modules in-process, including the
   cursor image pipeline, the slider control, the settings window and the engine's
-  tracking of AnyDesk windows and hidden ghosts.
+  tracking of AnyDesk and RDP windows and hidden ghosts.
 
 Build first, then run the tests:
 
