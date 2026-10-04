@@ -148,6 +148,12 @@ so sign-in is unobtrusive; the same switch works when launching the app directly
 - **Menu:** status window · Active/Inactive · one entry per detected window (ghosts
   and AnyDesk windows; toggles it) · Settings… · Info · Quit. The window entries are
   in the same order as the status list.
+- **Menu look and behaviour:** owner-drawn in the Windows menu style — the dark
+  variant in dark mode, the plain style under high contrast, system colours without
+  visual styles — with the system menu font and metrics at the DPI of the monitor it
+  opens on, so it matches a native menu. Active/Inactive and the window entries are
+  toggles: clicking one (or Enter) switches it in place and the menu **stays open**.
+  It closes when a command is chosen, on Esc, or when it loses the focus.
 - **Status window:** title `DeGhoster — N Ghosts`; a list of detected windows
   (`Title (exe)`, sorted by that label; hidden ghosts greyed out), each with a
   **eye switch** (it switches the window's program, section 4) shown the same way as the

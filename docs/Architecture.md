@@ -74,6 +74,7 @@ with no shared mutable state beyond the win-event thunk's single-instance pointe
 | `InfoWindow` | dark-mode "About" popup (modeless, single-instance) |
 | `SettingsWindow` | settings window (modeless, single-instance), built in sections; applies and saves every change at once and tells the owner with `WM_SETTINGS_CHANGED` |
 | `Controls` | owner-drawn on/off switch and slider used by the settings window |
+| `PopupMenu` | owner-drawn tray menu in the Windows menu style (its dark variant in dark mode, plain under high contrast), with the system menu font and metrics at the DPI of the monitor it opens on; toggle entries flip in place, so the menu stays open until a command is chosen or it loses the focus |
 | `AutoZoom` | automatic zoom of one AnyDesk window: on-screen time per cursor picture, reference picture, zoom |
 | `CursorOverlay` | AnyDesk cursor overlay: `OBJID_CURSOR` WinEvents, activation check (asks the per-window filter), overlay window, `MagShowSystemCursor` |
 | `CursorImage` | cursor handle → premultiplied ARGB + hotspot (all three cursor kinds), outline for inverting pixels, sharp-bilinear scaling, visible height and picture fingerprint |

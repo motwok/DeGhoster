@@ -99,7 +99,9 @@ Click the eye to switch that window's **program** on or off: if a program has se
 in the list, they all switch together, and clicking any of their eyes switches them all back.
 Updates of the program keep your choice. Ignored windows stay in the list so you can turn
 them back on any time. You can do the same from the tray menu, where every detected window
-appears as its own entry, in the same order as in the list.
+appears as its own entry, in the same order as in the list. The menu stays open while you
+switch entries on and off, so you can change several in one go; it closes as soon as you
+click somewhere else.
 
 A ghost window whose program hides it — for example when you minimize WhatsApp — stays in
 the list, **greyed out**, until the program really closes it. It stays harmless meanwhile.
