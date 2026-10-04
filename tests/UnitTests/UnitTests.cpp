@@ -23,6 +23,10 @@
 #include "GhostEngine.h"
 #include "Gfx.h"
 #include "Loc.h"
+#include "PopupMenu.h"
+
+#include <functional>
+#include <uxtheme.h>
 
 #include <commctrl.h>
 
@@ -797,6 +801,29 @@ static void GhostEngineTests()
     eng.tick();
     Check(!t.count(ghost), "a window that stops being a ghost leaves the list");
 
+    // A ghost that is already cloaked (by someone else) is not one to fix.
+    HWND hidden = MakeTopLevel(L"Chrome_WidgetWin_1", L"DeGhoster-CloakedGhost", WS_EX_LAYERED);
+    SetLayeredWindowAttributes(hidden, 0, 0, LWA_ALPHA);
+    ShowWindow(hidden, SW_SHOWNA);
+    BOOL cloak = TRUE;
+    DwmSetWindowAttribute(hidden, DWMWA_CLOAK, &cloak, sizeof(cloak));
+    eng.tick();
+    Check(!t.count(hidden), "an already cloaked window is not listed");
+
+    // Late hook replies. A "cloaked" for a window that is no longer tracked but
+    // still alive is taken back; an "uncloaked" for a tracked window that is
+    // gone drops it from the list.
+    const int before = l.changes;
+    eng.onCloaked(hidden);
+    Check(!t.count(hidden), "a late cloak reply does not track the window");
+    HWND gone = MakeTopLevel(L"ad_win#9", L"555 - AnyDesk", 0);
+    ShowWindow(gone, SW_SHOWNA);
+    Check(eng.trackCursorWindow(gone) != nullptr, "a further AnyDesk window is tracked");
+    DestroyWindow(gone);   // no tick in between: still listed
+    eng.onUncloaked(gone);
+    Check(!t.count(gone) && l.changes > before, "an uncloak reply for a destroyed window drops it");
+    DestroyWindow(hidden);
+
     eng.stop(500);
     DestroyWindow(ad2);
     DestroyWindow(ghost);
@@ -847,9 +874,200 @@ static void CursorOverlayTests()
     ov.setSessionLocked(false);
     ov.setEnabled(false);
     Check(!ov.visible(), "disabled: hidden");
+    ov.refresh();   // a window switched while the overlay is off
+    Check(!ov.visible(), "a refresh while disabled keeps it hidden");
     ov.destroy();
     ov.destroy();   // idempotent
     Check(FindOwnWindow(L"DeGhosterCursorOverlay") == nullptr, "destroy removes the window");
+}
+
+// ---- PopupMenu: driven from inside its own modal loop -----------------------
+
+static LRESULT CALLBACK MenuOwnerProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+    LRESULT r = 0;
+    if (PopupMenu::OwnerMessage(msg, wp, lp, r)) return r;
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static HWND MakeMenuOwner()
+{
+    WNDCLASSEXW wc{ sizeof(wc) };
+    wc.lpfnWndProc = MenuOwnerProc;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"DeGhosterTestMenuOwner";
+    RegisterClassExW(&wc);   // fails harmlessly when already registered
+    return CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"", WS_POPUP, 0, 0, 1, 1,
+                           nullptr, nullptr, wc.hInstance, nullptr);
+}
+
+// This thread's open menu window.
+static HWND OpenMenuWindow()
+{
+    for (HWND h = FindWindowExW(nullptr, nullptr, L"#32768", nullptr); h;
+         h = FindWindowExW(nullptr, h, L"#32768", nullptr))
+        if (IsWindowVisible(h) && GetWindowThreadProcessId(h, nullptr) == GetCurrentThreadId()) return h;
+    return nullptr;
+}
+
+// What the test does once the menu is open. A thread timer fires inside the
+// menu's modal loop; a second one ends the menu in any case, so a failed step
+// can never hang the test run.
+static std::function<void(HWND menuWnd, HMENU)> g_inMenu;
+static bool g_inMenuRan = false;
+
+static void CALLBACK InMenuTimer(HWND, UINT, UINT_PTR id, DWORD)
+{
+    HWND w = OpenMenuWindow();
+    if (!w) return;   // not shown yet: the next tick tries again
+    KillTimer(nullptr, id);
+    g_inMenuRan = true;
+    g_inMenu(w, (HMENU)SendMessageW(w, MN_GETHMENU, 0, 0));
+}
+
+static void CALLBACK MenuWatchdog(HWND, UINT, UINT_PTR id, DWORD)
+{
+    KillTimer(nullptr, id);
+    EndMenu();
+}
+
+static UINT TrackWith(PopupMenu& m, HWND owner, bool dark, const std::function<void(HWND, HMENU)>& inMenu,
+                      const std::function<void(UINT)>& onToggle)
+{
+    g_inMenu = inMenu;
+    g_inMenuRan = false;
+    const UINT_PTR t1 = SetTimer(nullptr, 0, 50, InMenuTimer);
+    const UINT_PTR t2 = SetTimer(nullptr, 0, 8000, MenuWatchdog);
+    const UINT cmd = m.track(owner, dark, POINT{ 120, 120 }, onToggle);
+    KillTimer(nullptr, t1);
+    KillTimer(nullptr, t2);
+    Pump();
+    return cmd;
+}
+
+constexpr UINT kMN_SELECTITEM = 0x01E5;   // highlights the item at wParam
+
+// Status (default) | Active (toggle) | --- | "Window & One" (literal toggle) |
+// (note) | --- | Settings | About | Quit
+enum : UINT { kStatus = 10, kActive = 11, kWindow = 12, kSettings = 13, kAbout = 14, kQuit = 15 };
+
+static void FillMenu(PopupMenu& m)
+{
+    m.addCommand(kStatus, L"Status", true);
+    m.addToggle(kActive, L"Active", true, false, L"Inactive");
+    m.addSeparator();
+    m.addToggle(kWindow, L"Window & One", true, true);
+    m.addNote(L"nothing here");
+    m.addSeparator();
+    m.addCommand(kSettings, L"Settings");
+    m.addCommand(kAbout, L"About");
+    m.addCommand(kQuit, L"Quit");
+}
+
+static WORD MenuChar(HMENU hm, wchar_t ch, WORD* pos = nullptr)
+{
+    LRESULT r = 0;
+    PopupMenu::OwnerMessage(WM_MENUCHAR, MAKEWPARAM(ch, MF_POPUP), (LPARAM)hm, r);
+    if (pos) *pos = LOWORD(r);
+    return HIWORD(r);
+}
+
+static void PopupMenuTests()
+{
+    std::printf("PopupMenu tests\n");
+    HWND owner = MakeMenuOwner();
+    LRESULT dummy = 0;
+    Check(!PopupMenu::OwnerMessage(WM_MENUCHAR, 'a', 0, dummy), "no open menu: the owner keeps its messages");
+
+    {   // The visual style in the light variant: paint, keys, toggles and a command.
+        PopupMenu m;
+        FillMenu(m);
+        std::vector<UINT> toggled;
+        bool painted = false, kept = false;
+        WORD quitAction = 0, quitPos = 0, toggleAction = 0, togglePos = 0, twoAction = 0, twoPos = 0;
+        WORD noneAction = 0, noteAction = 0;
+        WORD firstAction = 0, firstPos = 0;
+        const UINT cmd = TrackWith(m, owner, false, [&](HWND w, HMENU hm) {
+            painted = RedrawWindow(w, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW) != FALSE;
+            firstAction = MenuChar(hm, L's', &firstPos);   // nothing highlighted yet
+            SendMessageW(w, kMN_SELECTITEM, 1, 0);   // highlight "Active"
+            RedrawWindow(w, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+            // The fade-in animation renders the menu through WM_PRINT.
+            HDC screen = GetDC(nullptr);
+            HDC mem = CreateCompatibleDC(screen);
+            HBITMAP bmp = CreateCompatibleBitmap(screen, 400, 400);
+            HGDIOBJ old = SelectObject(mem, bmp);
+            SendMessageW(w, WM_PRINT, (WPARAM)mem, PRF_NONCLIENT | PRF_CLIENT | PRF_ERASEBKGND);
+            SelectObject(mem, old);
+            DeleteObject(bmp);
+            DeleteDC(mem);
+            ReleaseDC(nullptr, screen);
+
+            quitAction = MenuChar(hm, L'q', &quitPos);
+            toggleAction = MenuChar(hm, L'w', &togglePos);
+            twoAction = MenuChar(hm, L's', &twoPos);
+            noneAction = MenuChar(hm, L'z');
+            noteAction = MenuChar(hm, L'n');
+
+            // Enter on the highlighted toggle flips it and keeps the menu open;
+            // then "q" picks Quit, the only item starting with it.
+            PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0);
+            PostMessageW(w, WM_CHAR, L'q', 0);
+        }, [&](UINT id) {
+            toggled.push_back(id);
+            m.setToggle(kActive, false, L"Inactive");   // what the tray does: new state, new name
+            m.setToggle(kActive, false);                // no change at all
+            kept = OpenMenuWindow() != nullptr;
+        });
+        Check(g_inMenuRan, "the menu opened (light)");
+        Check(painted, "the light menu paints");
+        Check(firstAction == MNC_SELECT && firstPos == 0, "without a highlight the search starts at the top");
+        Check(quitAction == MNC_EXECUTE && quitPos == 8, "a letter of one command runs it");
+        Check(toggleAction == MNC_SELECT && togglePos == 3, "a letter of a toggle only selects it");
+        Check(twoAction == MNC_SELECT && twoPos == 6, "a letter of two items selects the next one after the highlight");
+        Check(noneAction == MNC_IGNORE, "a letter of no item is ignored");
+        Check(noteAction == MNC_IGNORE, "a note is never picked by its letter");
+        Check(toggled.size() == 1 && toggled[0] == kActive, "Enter on a toggle runs the toggle callback");
+        Check(kept, "the menu stays open while a toggle flips");
+        Check(cmd == kQuit, "the command chosen by its letter is returned");
+    }
+
+    {   // The dark variant (where Windows has dark menus), dismissed: returns 0.
+        PopupMenu m;
+        FillMenu(m);
+        bool painted = false;
+        const UINT cmd = TrackWith(m, owner, true, [&](HWND w, HMENU) {
+            SendMessageW(w, kMN_SELECTITEM, 4, 0);   // the note: a disabled, highlighted item
+            painted = RedrawWindow(w, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW) != FALSE;
+            EndMenu();
+        }, {});
+        Check(g_inMenuRan && painted, "the dark menu opens and paints");
+        Check(cmd == 0, "a dismissed menu returns no command");
+    }
+
+    {   // Visual styles off (for this owner): the classic menu in system colours.
+        HWND classic = MakeMenuOwner();
+        SetWindowTheme(classic, L" ", L" ");
+        HTHEME probe = OpenThemeDataForDpi(classic, L"Menu", 96);
+        if (Check(probe == nullptr, "an owner without visual styles gets no menu style")) {
+            PopupMenu m;
+            FillMenu(m);
+            bool painted = false;
+            const UINT cmd = TrackWith(m, classic, true, [&](HWND w, HMENU) {
+                for (int i : { 0, 1, 2, 4 }) {   // default, checked toggle, separator, disabled note
+                    SendMessageW(w, kMN_SELECTITEM, i, 0);
+                    painted = RedrawWindow(w, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW) != FALSE;
+                }
+                EndMenu();
+            }, {});
+            Check(g_inMenuRan && painted, "the classic menu opens and paints");
+            Check(cmd == 0, "the classic menu returns no command when dismissed");
+        }
+        if (probe) CloseThemeData(probe);
+        DestroyWindow(classic);
+    }
+
+    DestroyWindow(owner);
 }
 
 static int Cloaked(HWND h)
@@ -1166,6 +1384,7 @@ int main()
     ControlTests();
     SettingsWindowTests();
     CursorOverlayTests();
+    PopupMenuTests();
     GhostEngineTests();
     ThemeTests();
     ProcessUtilTests();

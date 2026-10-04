@@ -293,9 +293,17 @@ public class CursorOverlayTests
         // developer machine has windows of its own), so wait until it settles.
         int with = StableCount(run.Host);
 
+        // A selected row stays selected when the list is rebuilt for a new window.
+        IntPtr list = GetDlgItem(run.Host, IDC_LIST);
+        SendMessage(list, WM_KEYDOWN, (IntPtr)VK_HOME, IntPtr.Zero);
+        Assert.True(Selected(list) == 0, "the first row could not be selected");
+
         using (Sim.Start("64", "alpha", "ad_win#2", SimX + SimW + 20, SimY, 200, 200))
+        {
             Assert.True(WaitUntil(() => Count(run.Host) == with + 1, TimeSpan.FromSeconds(5)),
                         "a second AnyDesk window was not counted as a window of its own");
+            Assert.True(Selected(list) >= 0, "the rebuilt list lost the selection");
+        }
         Assert.True(WaitUntil(() => Count(run.Host) == with, TimeSpan.FromSeconds(5)),
                     $"a closed AnyDesk window was not dropped from the count ({with} -> {Count(run.Host)})");
         Assert.True((int)SendMessage(GetDlgItem(run.Host, IDC_LIST), LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero) == with,
@@ -420,6 +428,30 @@ public class CursorOverlayTests
             Thread.Sleep(1500);
             Assert.Equal(with, Count(run.Host));
         }
+    }
+
+    private const uint LVM_GETNEXTITEM = 0x100C;
+    private const int LVNI_SELECTED = 0x0002;
+
+    private static int Selected(IntPtr list) =>
+        (int)SendMessage(list, LVM_GETNEXTITEM, (IntPtr)(-1), (IntPtr)LVNI_SELECTED);
+
+    [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
+    public void Auto_zoom_forgets_closed_windows()
+    {
+        // Auto keeps a zoom per session window; a closed one is dropped when the
+        // cursor reaches a new window.
+        using var run = Run.Start("64", "alpha", zoom: null);
+        using var rdp = Sim.Start("32", "alpha", RdpHostClass, SimX + SimW + 20, SimY, 200, 200, RdpChain);
+        run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+        run.Sim.Dispose();
+        Assert.True(run.Sim.P.WaitForExit(5000), "the first session window did not close");
+        run.MoveTo(SimX + SimW + 120, SimY + 120);
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)),
+                    "the overlay did not follow onto the second session window");
     }
 
     // The number in the status window's title, "DeGhoster — N Ghosts".

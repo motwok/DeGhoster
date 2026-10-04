@@ -14,7 +14,8 @@ add_executable(UnitTests UnitTests.cpp
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/InfoWindow.cpp"
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/HoverButton.cpp"
   "${CMAKE_SOURCE_DIR}/src/DeGhoster/Gfx.cpp"
-  "${CMAKE_SOURCE_DIR}/src/DeGhoster/Loc.cpp")
+  "${CMAKE_SOURCE_DIR}/src/DeGhoster/Loc.cpp"
+  "${CMAKE_SOURCE_DIR}/src/DeGhoster/PopupMenu.cpp")
 set_target_properties(UnitTests PROPERTIES OUTPUT_NAME "UnitTests")
 target_include_directories(UnitTests PRIVATE
   "${CMAKE_SOURCE_DIR}/src/DeGhoster"
@@ -23,7 +24,7 @@ target_compile_definitions(UnitTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEA
 target_compile_features(UnitTests PRIVATE cxx_std_17)
 target_compile_options(UnitTests PRIVATE "/utf-8")
 target_link_libraries(UnitTests PRIVATE user32 gdi32 dwmapi advapi32 comctl32 shell32 gdiplus
-  magnification shcore)
+  magnification shcore uxtheme)
 
 set(_out "${CMAKE_SOURCE_DIR}/build")
 set_target_properties(UnitTests PROPERTIES
