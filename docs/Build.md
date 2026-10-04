@@ -252,6 +252,9 @@ automated `coverage\auto.cov` into `coverage\merged-html`:
 ```
 
 This run needs a real interactive desktop and a human, so it is **not** part of CI.
+Like the integration tests, it uses a throwaway settings root
+(`HKCU\Software\DeGhoster_Manual_<id>`, removed afterwards), so switching windows on
+and off during the run never changes your own DeGhoster settings.
 The CI does check that it was done, though: a pull request that changes anything
 under `src\` can only merge once the committed manual run matches that code. The
 [Manual test](../.github/workflows/manual-test.yml) workflow runs
