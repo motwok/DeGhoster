@@ -59,6 +59,10 @@ public:
     void setSessionLocked(bool locked);
 
     bool visible() const { return visible_; }
+    // True when inverting cursor pixels really invert the screen under them; false
+    // (black with a white outline instead) where the overlay cannot be left out of
+    // screen captures.
+    bool invertsForReal() const { return canInvert_; }
 
     // True for AnyDesk's session window class: "ad_win", with AnyDesk's running
     // "#<n>" suffix (and anything after it) ignored.
@@ -80,6 +84,8 @@ private:
     void hook(bool on);
     void evaluate(bool shapeChanged);
     bool render(HCURSOR cursor, UINT dpi, int zoom);
+    bool paint(POINT cursorPos);
+    void paintXor(POINT cursorPos);
     int effectiveZoom(HWND root, UINT dpi);   // fixed zoom, or the window's automatic one
     int TargetHeight(UINT dpi);               // local arrow height on screen, cached per DPI
     void place(POINT cursorPos);
@@ -100,6 +106,7 @@ private:
     int srcHeight_ = 0;
 
     // What the overlay currently shows; a change of any of them means re-render.
+    cursorimg::Image shown_;   // the scaled picture
     HCURSOR shownCursor_ = nullptr;
     int shownZoom_ = 0;
     UINT shownDpi_ = 0;
@@ -108,6 +115,14 @@ private:
 
     std::function<bool(HWND)> filter_;
     bool magInit_ = false, cursorHidden_ = false;
+    // The inverting pixels' window (colour-keyed, left out of screen captures) and
+    // its picture; null where Windows cannot leave it out of captures.
+    HWND xorWnd_ = nullptr;
+    HDC xorDc_ = nullptr;
+    HBITMAP xorBmp_ = nullptr;
+    uint32_t* xorPx_ = nullptr;
+    SIZE xorSize_{};
+    bool canInvert_ = false;
     std::unordered_set<HCURSOR> systemCursors_;
 
     static CursorOverlay* s_instance;

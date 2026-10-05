@@ -21,53 +21,70 @@
 #include <vector>
 
 // Cursor handle -> premultiplied ARGB image + hotspot, and the sharp-bilinear
-// upscaling used by the AnyDesk cursor overlay (Specification.md section 10.4).
+// upscaling used by the remote cursor overlay (Specification.md section 10.4).
 // Everything but Read() is pure pixel work, so the unit tests drive it directly.
 namespace cursorimg {
 
 // Top-down, premultiplied 0xAARRGGBB pixels (the layout UpdateLayeredWindow wants).
+// `xr` holds the pixels that change the screen instead of covering it: empty
+// when there are none, otherwise one entry per pixel, 0 for an ordinary pixel and
+// 0xFF000000 | rgb for one that shows the screen XOR rgb there (rgb = white:
+// inverted). Those pixels are transparent in `px`.
 struct Image {
     int w = 0, h = 0;
     POINT hot{};
     std::vector<uint32_t> px;
+    std::vector<uint32_t> xr;
 
     uint32_t at(int x, int y) const { return px[(size_t)y * w + x]; }
+    bool inverts() const { return !xr.empty(); }
 };
 
 // Decodes the bitmaps GetIconInfo hands out, already read as top-down 32-bit
 // pixels. `color` is null for a monochrome cursor; `mask` then has double height
 // (AND above XOR). A mask pixel counts as set when its RGB part is non-zero.
-// `inverting` receives one flag per output pixel for the pixels that invert the
-// screen (they cannot be reproduced by an overlay); they are left transparent.
-void Decode(int w, int h, const uint32_t* color, const uint32_t* mask, POINT hot,
-            Image& out, std::vector<uint8_t>& inverting);
+// Pixels that XOR the screen (AND 1 with a non-black colour or XOR bit) go to
+// `out.xr`.
+void Decode(int w, int h, const uint32_t* color, const uint32_t* mask, POINT hot, Image& out);
 
-// Draws inverting pixels opaque black and every transparent pixel within
-// `radius` of one opaque white, so an inverting I-beam stays visible on any
-// background. The canvas grows by `radius` on each side (hotspot included) when
+// The stand-in for an overlay that cannot read the screen under itself: draws
+// the XOR pixels opaque black and every transparent pixel within `radius` of one
+// opaque white, so an inverting I-beam stays visible on any background, and
+// drops `xr`. The canvas grows by `radius` on each side (hotspot included) when
 // there is anything to outline, so the outline is never cut off at the edge.
-void AddOutline(Image& img, const std::vector<uint8_t>& inverting, int radius);
+void AddOutline(Image& img, int radius);
+
+// The inverting pixels over a background, for a colour-keyed window: `screen`
+// holds the w x h screen pixels under the image (0x00RRGGBB, top-down); `out`
+// (may be `screen`) gets the screen pixel XOR its colour at every XOR pixel and
+// `key` everywhere else. A result that happens to equal `key` is nudged by one
+// step, so it does not turn transparent.
+void XorLayer(const Image& img, const uint32_t* screen, uint32_t* out, uint32_t key);
 
 // Outline radius for the monitor the cursor is on: max(1, round(dpi/96 * 0.8)).
 int OutlineRadius(UINT dpi);
 
 // Sharp bilinear: nearest neighbour by the integer part k = max(1, zoom/100),
 // then bilinear to the exact size round(size * zoom / 100), edges clamped.
-// The hotspot is scaled the same way.
+// The hotspot is scaled the same way. XOR pixels stay crisp: an output pixel is
+// one where the bilinear coverage of XOR pixels reaches one half, with the
+// colour of the nearest of them.
 Image Scale(const Image& src, int zoomPercent);
 
-// Height of the visible part: the rows with a pixel of at least 50 % opacity, 0 if
-// none. The threshold leaves out soft drop shadows (a Mac arrow's shadow adds a
-// third to its height), which would otherwise make that cursor look too tall.
+// Height of the visible part: the rows with a pixel of at least 50 % opacity or
+// an XOR pixel, 0 if none. The threshold leaves out soft drop shadows (a Mac
+// arrow's shadow adds a third to its height), which would otherwise make that
+// cursor look too tall.
 int VisibleHeight(const Image& img);
 constexpr uint32_t kVisibleAlpha = 128;
 
-// A fingerprint of the picture (size, hotspot, pixels). Cursor handles cannot
-// tell shapes apart: AnyDesk destroys cursors and gets the same handle back.
+// A fingerprint of the picture (size, hotspot, pixels, XOR pixels). Cursor
+// handles cannot tell shapes apart: AnyDesk destroys cursors and gets the same
+// handle back.
 uint64_t Key(const Image& img);
 
-// Reads a live cursor (any process's: cursor handles are valid system-wide),
-// including the outline for inverting pixels. False if it has no usable image.
-bool Read(HCURSOR cursor, UINT dpi, Image& out);
+// Reads a live cursor (any process's: cursor handles are valid system-wide).
+// False if it has no usable image.
+bool Read(HCURSOR cursor, Image& out);
 
 } // namespace cursorimg

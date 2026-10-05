@@ -25,8 +25,16 @@
 #pragma comment(lib, "magnification.lib")
 #pragma comment(lib, "shcore.lib")
 
+#ifndef WDA_EXCLUDEFROMCAPTURE
+#define WDA_EXCLUDEFROMCAPTURE 0x00000011
+#endif
+
 namespace {
 constexpr wchar_t kClass[] = L"DeGhosterCursorOverlay";
+constexpr wchar_t kXorClass[] = L"DeGhosterCursorOverlayXor";
+constexpr uint32_t kKey = 0x00FF00FFu;   // the XOR window's transparent colour (magenta)
+constexpr UINT_PTR kRefreshTimer = 1;
+constexpr UINT kRefreshMs = 50;   // 20 frames a second under a resting inverting cursor
 
 // Every standard cursor id. AnyDesk's own UI (title bar, tabs, menus, settings)
 // uses these; the remote cursor is always one the client created itself.
@@ -92,6 +100,21 @@ bool CursorOverlay::create(HINSTANCE inst)
                            kClass, L"", WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, inst, nullptr);
     if (!wnd_) return false;
 
+    // Pixels that invert the screen go to a second window above the overlay: it
+    // shows the screen under them inverted, so reading the screen must not see
+    // that window itself. Only a colour-keyed layered window can be left out of
+    // screen captures (WDA_EXCLUDEFROMCAPTURE, Windows 10 2004 and later; the
+    // per-pixel-alpha overlay cannot), and inverting pixels need no partial alpha.
+    // Where that fails, inverting pixels are drawn black with a white outline.
+    wc.lpszClassName = kXorClass;
+    RegisterClassExW(&wc);
+    xorWnd_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST |
+                              WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                              kXorClass, L"", WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, inst, nullptr);
+    canInvert_ = xorWnd_ && SetLayeredWindowAttributes(xorWnd_, kKey, 0, LWA_COLORKEY) &&
+                 SetWindowDisplayAffinity(xorWnd_, WDA_EXCLUDEFROMCAPTURE);
+    if (!canInvert_ && xorWnd_) { DestroyWindow(xorWnd_); xorWnd_ = nullptr; }
+
     for (int id : kSystemCursorIds)
         if (HCURSOR c = LoadCursorW(nullptr, MAKEINTRESOURCEW(id))) systemCursors_.insert(c);
 
@@ -105,6 +128,12 @@ void CursorOverlay::destroy()
     hide();
     if (magInit_) { MagUninitialize(); magInit_ = false; }
     if (wnd_) { DestroyWindow(wnd_); wnd_ = nullptr; }
+    if (xorWnd_) { DestroyWindow(xorWnd_); xorWnd_ = nullptr; }
+    if (xorDc_) { DeleteDC(xorDc_); xorDc_ = nullptr; }
+    if (xorBmp_) { DeleteObject(xorBmp_); xorBmp_ = nullptr; }
+    xorPx_ = nullptr;
+    xorSize_ = {};
+    canInvert_ = false;
     if (s_instance == this) s_instance = nullptr;
 }
 
@@ -207,7 +236,10 @@ void CursorOverlay::evaluate(bool shapeChanged)
     const UINT dpi = DpiAt(pt);
     const bool newShape = shapeChanged || ci.hCursor != shownCursor_;
     if (newShape || dpi != shownDpi_) {
-        if (!cursorimg::Read(ci.hCursor, dpi, src_)) { hide(); return; }
+        if (!cursorimg::Read(ci.hCursor, src_)) { hide(); return; }
+        // Without a way to read the screen under itself, the overlay shows
+        // inverting pixels black with a white outline instead.
+        if (!canInvert_) cursorimg::AddOutline(src_, cursorimg::OutlineRadius(dpi));
         srcKey_ = cursorimg::Key(src_);
         srcHeight_ = cursorimg::VisibleHeight(src_);
     }
@@ -248,7 +280,7 @@ int CursorOverlay::TargetHeight(UINT dpi)
     if (it != targets_.end()) return it->second;
     cursorimg::Image arrow;
     int h = 0;
-    if (cursorimg::Read(LoadCursorW(nullptr, IDC_ARROW), dpi, arrow))
+    if (cursorimg::Read(LoadCursorW(nullptr, IDC_ARROW), arrow))
         h = MulDiv(cursorimg::VisibleHeight(arrow), (int)dpi, 96);
     targets_[dpi] = h;
     return h;
@@ -256,8 +288,22 @@ int CursorOverlay::TargetHeight(UINT dpi)
 
 bool CursorOverlay::render(HCURSOR cursor, UINT dpi, int zoom)
 {
-    const cursorimg::Image img = cursorimg::Scale(src_, zoom);
+    shown_ = cursorimg::Scale(src_, zoom);
+    POINT cur{}; GetCursorPos(&cur);
+    if (!paint(cur)) return false;
 
+    shownCursor_ = cursor;
+    shownZoom_ = zoom;
+    shownDpi_ = dpi;
+    hot_ = shown_.hot;
+    return true;
+}
+
+// Puts the shown picture at cursor position `cur`: the overlay gets its ordinary
+// pixels (its inverting ones stay transparent), the XOR window the inverting ones.
+bool CursorOverlay::paint(POINT cur)
+{
+    const cursorimg::Image& img = shown_;
     BITMAPINFO bi{};
     bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
     bi.bmiHeader.biWidth = img.w;
@@ -272,10 +318,9 @@ bool CursorOverlay::render(HCURSOR cursor, UINT dpi, int zoom)
     HBITMAP dib = CreateDIBSection(screen, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
     bool ok = false;
     if (dib && bits) {
-        std::memcpy(bits, img.px.data(), img.px.size() * sizeof(uint32_t));
         HGDIOBJ old = SelectObject(mem, dib);
-        POINT cur{}; GetCursorPos(&cur);
         POINT dst{ cur.x - img.hot.x, cur.y - img.hot.y }, src0{ 0, 0 };
+        std::memcpy(bits, img.px.data(), img.px.size() * sizeof(uint32_t));
         SIZE size{ img.w, img.h };
         BLENDFUNCTION blend{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
         ok = UpdateLayeredWindow(wnd_, screen, &dst, &size, mem, &src0, 0, &blend, ULW_ALPHA) != FALSE;
@@ -284,21 +329,78 @@ bool CursorOverlay::render(HCURSOR cursor, UINT dpi, int zoom)
     if (dib) DeleteObject(dib);
     DeleteDC(mem);
     ReleaseDC(nullptr, screen);
-    if (!ok) return false;
+    if (ok) paintXor(cur);
+    return ok;
+}
 
-    shownCursor_ = cursor;
-    shownZoom_ = zoom;
-    shownDpi_ = dpi;
-    hot_ = img.hot;
-    return true;
+// The XOR window: the screen under the inverting pixels XOR their colour, the
+// key colour everywhere else. The screen is read with the overlay in it (its
+// inverting pixels are transparent there) but without this window, which is
+// left out of captures.
+void CursorOverlay::paintXor(POINT cur)
+{
+    if (!xorWnd_) return;
+    const cursorimg::Image& img = shown_;
+    if (!img.inverts()) { ShowWindow(xorWnd_, SW_HIDE); return; }
+
+    if (!xorDc_ || xorSize_.cx != img.w || xorSize_.cy != img.h) {
+        if (!xorDc_) xorDc_ = CreateCompatibleDC(nullptr);
+        BITMAPINFO bi{};
+        bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+        bi.bmiHeader.biWidth = img.w;
+        bi.bmiHeader.biHeight = -img.h;
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bi.bmiHeader.biCompression = BI_RGB;
+        void* bits = nullptr;
+        HBITMAP bmp = CreateDIBSection(xorDc_, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+        if (!bmp || !bits) {
+            if (bmp) DeleteObject(bmp);
+            ShowWindow(xorWnd_, SW_HIDE);
+            return;
+        }
+        SelectObject(xorDc_, bmp);   // deselects the previous one, which can go now
+        if (xorBmp_) DeleteObject(xorBmp_);
+        xorBmp_ = bmp;
+        xorPx_ = static_cast<uint32_t*>(bits);
+        xorSize_ = { img.w, img.h };
+    }
+
+    const POINT dst{ cur.x - img.hot.x, cur.y - img.hot.y };
+    HDC screen = GetDC(nullptr);
+    BitBlt(xorDc_, 0, 0, img.w, img.h, screen, dst.x, dst.y, SRCCOPY);
+    ReleaseDC(nullptr, screen);
+    GdiFlush();
+    cursorimg::XorLayer(img, xorPx_, xorPx_, kKey);
+
+    // Above the overlay, at its place; the picture goes in right after the move.
+    SetWindowPos(xorWnd_, HWND_TOPMOST, dst.x, dst.y, img.w, img.h,
+                 SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOCOPYBITS | SWP_NOREDRAW | SWP_SHOWWINDOW);
+    if (HDC dc = GetDC(xorWnd_)) {
+        BitBlt(dc, 0, 0, img.w, img.h, xorDc_, 0, 0, SRCCOPY);
+        ReleaseDC(xorWnd_, dc);
+    }
+    ValidateRect(xorWnd_, nullptr);
 }
 
 void CursorOverlay::place(POINT pt)
 {
+    // An inverting picture shows what is under it, which changes with every move
+    // and, below a resting mouse, whenever the screen does (text being typed under
+    // the I-beam). So it is recomposed on every move and on a short timer.
+    if (shown_.inverts()) {
+        paint(pt);
+        SetTimer(wnd_, kRefreshTimer, kRefreshMs, nullptr);
+    } else {
+        KillTimer(wnd_, kRefreshTimer);
+    }
     // HWND_TOPMOST on every move re-asserts the band: the taskbar is topmost too
     // and would otherwise clip the cursor at the bottom edge of the screen.
     SetWindowPos(wnd_, HWND_TOPMOST, pt.x - hot_.x, pt.y - hot_.y, 0, 0,
                  SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+    if (shown_.inverts() && xorWnd_)   // the XOR window stays above it
+        SetWindowPos(xorWnd_, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     if (!visible_) {
         ShowWindow(wnd_, SW_SHOWNOACTIVATE);
         visible_ = true;
@@ -310,6 +412,8 @@ void CursorOverlay::hide()
 {
     if (visible_ && wnd_) ShowWindow(wnd_, SW_HIDE);
     visible_ = false;
+    if (wnd_) KillTimer(wnd_, kRefreshTimer);
+    if (xorWnd_) ShowWindow(xorWnd_, SW_HIDE);
     // Forget what the window holds: AnyDesk can destroy a cursor and get the same
     // handle value back for its next shape, so after a hide (a failed read among
     // them) an unchanged handle must not re-show the old picture unread.
@@ -332,5 +436,23 @@ LRESULT CALLBACK CursorOverlay::WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_NCHITTEST) return HTTRANSPARENT;
     if (msg == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+    if (msg == WM_PAINT && s_instance && h == s_instance->xorWnd_) {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(h, &ps);
+        if (s_instance->xorDc_)
+            BitBlt(dc, 0, 0, s_instance->xorSize_.cx, s_instance->xorSize_.cy, s_instance->xorDc_, 0, 0, SRCCOPY);
+        EndPaint(h, &ps);
+        return 0;
+    }
+    if (msg == WM_TIMER && wp == kRefreshTimer) {
+        // Below a resting mouse the screen under an inverting cursor can change.
+        if (s_instance && s_instance->visible_ && s_instance->shown_.inverts()) {
+            POINT cur{};
+            if (GetCursorPos(&cur)) s_instance->paint(cur);
+        } else {
+            KillTimer(h, kRefreshTimer);
+        }
+        return 0;
+    }
     return DefWindowProcW(h, msg, wp, lp);
 }

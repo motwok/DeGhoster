@@ -53,13 +53,13 @@ bool ReadBits(HDC dc, HBITMAP bmp, int w, int h, std::vector<uint32_t>& px)
 
 } // namespace
 
-void Decode(int w, int h, const uint32_t* color, const uint32_t* mask, POINT hot,
-            Image& out, std::vector<uint8_t>& inverting)
+void Decode(int w, int h, const uint32_t* color, const uint32_t* mask, POINT hot, Image& out)
 {
     out.w = w; out.h = h; out.hot = hot;
     const size_t n = (size_t)w * h;
     out.px.assign(n, 0);
-    inverting.assign(n, 0);
+    out.xr.assign(n, 0);
+    bool inverts = false;
 
     if (color) {
         bool hasAlpha = false;
@@ -70,23 +70,28 @@ void Decode(int w, int h, const uint32_t* color, const uint32_t* mask, POINT hot
             } else if (!Bit(mask, i)) {
                 out.px[i] = 0xFF000000u | (color[i] & 0x00FFFFFFu);
             } else if ((color[i] & 0x00FFFFFFu) != 0) {
-                inverting[i] = 1;
+                out.xr[i] = 0xFF000000u | (color[i] & 0x00FFFFFFu);   // screen XOR colour
+                inverts = true;
             }
         }
-        return;
+    } else {
+        // Monochrome: AND rows first, XOR rows below them.
+        for (size_t i = 0; i < n; ++i) {
+            const bool andBit = Bit(mask, i), xorBit = Bit(mask, i + n);
+            if (!andBit) {
+                out.px[i] = xorBit ? kWhite : kBlack;
+            } else if (xorBit) {
+                out.xr[i] = kWhite;   // screen XOR white: inverted
+                inverts = true;
+            }
+        }
     }
-
-    // Monochrome: AND rows first, XOR rows below them.
-    for (size_t i = 0; i < n; ++i) {
-        const bool andBit = Bit(mask, i), xorBit = Bit(mask, i + n);
-        if (!andBit)     out.px[i] = xorBit ? kWhite : kBlack;
-        else if (xorBit) inverting[i] = 1;
-    }
+    if (!inverts) out.xr.clear();
 }
 
-void AddOutline(Image& img, const std::vector<uint8_t>& inverting, int radius)
+void AddOutline(Image& img, int radius)
 {
-    if (std::find(inverting.begin(), inverting.end(), (uint8_t)1) == inverting.end()) return;
+    if (!img.inverts()) return;
     if (radius < 1) radius = 1;
 
     const int w = img.w + 2 * radius, h = img.h + 2 * radius;
@@ -96,7 +101,7 @@ void AddOutline(Image& img, const std::vector<uint8_t>& inverting, int radius)
         for (int x = 0; x < img.w; ++x) {
             const size_t s = (size_t)y * img.w + x, d = (size_t)(y + radius) * w + (x + radius);
             px[d] = img.px[s];
-            inv[d] = inverting[s];
+            inv[d] = img.xr[s] != 0;
         }
 
     const int r2 = radius * radius;
@@ -116,6 +121,17 @@ void AddOutline(Image& img, const std::vector<uint8_t>& inverting, int radius)
     img.w = w; img.h = h;
     img.hot.x += radius; img.hot.y += radius;
     img.px.swap(px);
+    img.xr.clear();
+}
+
+void XorLayer(const Image& img, const uint32_t* screen, uint32_t* out, uint32_t key)
+{
+    const size_t n = (size_t)img.w * img.h;
+    for (size_t i = 0; i < n; ++i) {
+        if (!img.inverts() || !img.xr[i]) { out[i] = key; continue; }
+        const uint32_t c = (screen[i] ^ img.xr[i]) & 0x00FFFFFFu;
+        out[i] = c == key ? (key ^ 1u) : c;
+    }
 }
 
 int OutlineRadius(UINT dpi)
@@ -136,9 +152,11 @@ Image Scale(const Image& src, int zoomPercent)
     out.hot.x = (src.hot.x * zoomPercent + 50) / 100;
     out.hot.y = (src.hot.y * zoomPercent + 50) / 100;
     out.px.assign((size_t)out.w * out.h, 0);
+    if (src.inverts()) out.xr.assign(out.px.size(), 0);
 
     // The nearest-neighbour image is never built: its pixel (x, y) is src(x/k, y/k).
     auto mid = [&](int x, int y) { return src.at(x / k, y / k); };
+    auto midXr = [&](int x, int y) { return src.xr[(size_t)(y / k) * src.w + x / k]; };
     const double sxScale = (double)mw / out.w, syScale = (double)mh / out.h;
 
     for (int y = 0; y < out.h; ++y) {
@@ -161,6 +179,21 @@ Image Scale(const Image& src, int zoomPercent)
                 v |= (uint32_t)std::min(255, ch) << sh;
             }
             out.px[(size_t)y * out.w + x] = v;
+
+            if (src.inverts()) {
+                // XOR pixels cannot be blended: an output pixel is one when they
+                // cover at least half of it, and takes the strongest one's colour.
+                const uint32_t xc[4] = { midXr(x0, y0), midXr(x1, y0), midXr(x0, y1), midXr(x1, y1) };
+                const double wt[4] = { (1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy };
+                double cover = 0, best = -1;
+                uint32_t pick = 0;
+                for (int c = 0; c < 4; ++c) {
+                    if (!xc[c]) continue;
+                    cover += wt[c];
+                    if (wt[c] > best) { best = wt[c]; pick = xc[c]; }
+                }
+                if (cover >= 0.5) out.xr[(size_t)y * out.w + x] = pick;
+            }
         }
     }
     return out;
@@ -171,7 +204,7 @@ int VisibleHeight(const Image& img)
     int top = -1, bottom = -1;
     for (int y = 0; y < img.h; ++y)
         for (int x = 0; x < img.w; ++x)
-            if ((img.at(x, y) >> 24) >= kVisibleAlpha) {
+            if ((img.at(x, y) >> 24) >= kVisibleAlpha || (img.inverts() && img.xr[(size_t)y * img.w + x])) {
                 if (top < 0) top = y;
                 bottom = y;
                 break;
@@ -189,10 +222,11 @@ uint64_t Key(const Image& img)
     mix((uint32_t)img.w); mix((uint32_t)img.h);
     mix((uint32_t)img.hot.x); mix((uint32_t)img.hot.y);
     for (uint32_t c : img.px) mix(c);
+    for (uint32_t c : img.xr) mix(c);
     return h;
 }
 
-bool Read(HCURSOR cursor, UINT dpi, Image& out)
+bool Read(HCURSOR cursor, Image& out)
 {
     ICONINFO ii{};
     if (!cursor || !GetIconInfo(cursor, &ii)) return false;
@@ -205,18 +239,14 @@ bool Read(HCURSOR cursor, UINT dpi, Image& out)
         const int w = bm.bmWidth, h = bm.bmHeight;
         if (w > 0 && h > 0 && ReadBits(dc, ii.hbmColor, w, h, color) &&
             ii.hbmMask && ReadBits(dc, ii.hbmMask, w, h, mask)) {
-            std::vector<uint8_t> inv;
-            Decode(w, h, color.data(), mask.data(), POINT{ (LONG)ii.xHotspot, (LONG)ii.yHotspot }, out, inv);
-            AddOutline(out, inv, OutlineRadius(dpi));
+            Decode(w, h, color.data(), mask.data(), POINT{ (LONG)ii.xHotspot, (LONG)ii.yHotspot }, out);
             ok = true;
         }
     } else if (ii.hbmMask && GetObjectW(ii.hbmMask, sizeof(bm), &bm)) {
         std::vector<uint32_t> mask;
         const int w = bm.bmWidth, h2 = bm.bmHeight;
         if (w > 0 && h2 >= 2 && ReadBits(dc, ii.hbmMask, w, h2, mask)) {
-            std::vector<uint8_t> inv;
-            Decode(w, h2 / 2, nullptr, mask.data(), POINT{ (LONG)ii.xHotspot, (LONG)ii.yHotspot }, out, inv);
-            AddOutline(out, inv, OutlineRadius(dpi));
+            Decode(w, h2 / 2, nullptr, mask.data(), POINT{ (LONG)ii.xHotspot, (LONG)ii.yHotspot }, out);
             ok = true;
         }
     }
@@ -227,7 +257,8 @@ bool Read(HCURSOR cursor, UINT dpi, Image& out)
     if (ok) {
         // A cursor with nothing visible (AnyDesk's "hidden remote cursor") has
         // nothing to enlarge; the caller then leaves the original alone.
-        ok = std::any_of(out.px.begin(), out.px.end(), [](uint32_t c) { return (c >> 24) != 0; });
+        ok = out.inverts() ||
+             std::any_of(out.px.begin(), out.px.end(), [](uint32_t c) { return (c >> 24) != 0; });
     }
     return ok;
 }

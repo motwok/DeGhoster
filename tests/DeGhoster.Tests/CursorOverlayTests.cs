@@ -65,13 +65,60 @@ public class CursorOverlayTests
         }
         else
         {
-            // 32x32 monochrome with inverting pixels: outlined, so the canvas grows
-            // by the outline radius (DPI of the monitor) on every side.
-            int r = Math.Max(1, (int)Math.Round(MonitorDpi(x, y) / 96.0 * 0.8, MidpointRounding.AwayFromZero));
-            int side = (32 + 2 * r) * 3, hot = (16 + r) * 3;
-            AssertRect(ov, x - hot, y - hot, side, side);
+            // 32x32 monochrome with inverting pixels: they really invert the screen,
+            // so there is no outline and the canvas keeps its size. The inverting
+            // pixels are in a second window of the same size on top of it.
+            AssertRect(ov, x - 48, y - 48, 96, 96);
+            IntPtr xor = FindWindow(XorClass, null);
+            Assert.True(WaitUntil(() => IsWindowVisible(xor) && Rect(xor).left == Rect(ov).left &&
+                                        Rect(xor).top == Rect(ov).top && Rect(xor).right == Rect(ov).right,
+                                  TimeSpan.FromSeconds(3)), $"no inverting window over the overlay: {Describe(xor)}");
         }
     }
+
+    [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
+    public void Inverting_pixels_get_a_window_left_out_of_screen_captures()
+    {
+        using var run = Run.Start("64", "alpha", zoom: 300);
+        run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+        IntPtr xor = FindWindow(XorClass, null);
+        Assert.True(xor != IntPtr.Zero, "this Windows has no window for inverting pixels");
+        Assert.Equal(WDA_EXCLUDEFROMCAPTURE, DisplayAffinity(xor));   // it must never read itself
+        Assert.Equal(WDA_NONE, DisplayAffinity(ov));                  // the overlay itself is captured normally
+        Assert.False(IsWindowVisible(xor), "an alpha cursor has no inverting pixels to show");
+
+        using var mono = Sim.Start("64", "mono", "ad_win#2", SimX + SimW + 20, SimY, 200, 200);
+        run.MoveTo(SimX + SimW + 120, SimY + 120);
+        Assert.True(WaitUntil(() => IsWindowVisible(ov) && IsWindowVisible(xor), TimeSpan.FromSeconds(3)),
+                    "an inverting cursor did not show its inverting window");
+
+        // It follows the mouse, and a resting mouse keeps it (the refresh timer).
+        run.MoveTo(SimX + SimW + 90, SimY + 150);
+        Assert.True(WaitUntil(() => Rect(xor).left == Rect(ov).left && Rect(xor).top == Rect(ov).top,
+                              TimeSpan.FromSeconds(3)), "the inverting window did not follow the overlay");
+        Thread.Sleep(300);
+        Assert.True(IsWindowVisible(xor), "the inverting window vanished under a resting mouse");
+
+        // Back on a cursor without inverting pixels, and on a system cursor: gone.
+        run.MoveInside();
+        Assert.True(WaitUntil(() => IsWindowVisible(ov) && !IsWindowVisible(xor), TimeSpan.FromSeconds(3)),
+                    "the inverting window stayed over an ordinary cursor");
+        run.MoveTo(SimX + SimW + 120, SimY + 120);
+        Assert.True(WaitUntil(() => IsWindowVisible(xor), TimeSpan.FromSeconds(3)), "the inverting window did not come back");
+        run.MoveTo(SimX + SimW / 2, SimY + Band / 2);
+        Assert.True(WaitUntil(() => !IsWindowVisible(ov) && !IsWindowVisible(xor), TimeSpan.FromSeconds(3)),
+                    "the inverting window stayed when the overlay was hidden");
+    }
+
+    private const string XorClass = "DeGhosterCursorOverlayXor";
+    private const uint WDA_NONE = 0x0, WDA_EXCLUDEFROMCAPTURE = 0x11;
+
+    private static uint DisplayAffinity(IntPtr h) => GetWindowDisplayAffinity(h, out uint a) ? a : 0xFFFFFFFF;
+
+    [DllImport("user32.dll")] private static extern bool GetWindowDisplayAffinity(IntPtr h, out uint affinity);
 
     [SkippableFact]
 

@@ -233,7 +233,7 @@ flowchart LR
     E[Cursor event<br/>move / shape / show / hide] --> C{Over an AnyDesk window<br/>that is switched on,<br/>non-system cursor?}
     C -- no --> H[Hide overlay<br/>show system cursor]
     C -- yes --> R{Cursor handle, zoom<br/>or DPI changed?}
-    R -- yes --> B[Read cursor image<br/>outline · scale] --> U[UpdateLayeredWindow]
+    R -- yes --> B[Read cursor image<br/>scale] --> U[UpdateLayeredWindow]
     R -- no --> M[Move overlay only]
     U --> S[Show without activation<br/>hide system cursor]
     M --> S
@@ -272,16 +272,29 @@ otherwise it is hidden:
 pixels are read as top-down 32-bit BGRA with `GetDIBits`:
 
 - *Colour with alpha* (any alpha ≠ 0): used as is.
-- *Colour without alpha*: AND 0 → opaque; AND 1 with a non-black colour → inverting;
-  otherwise transparent.
+- *Colour without alpha*: AND 0 → opaque; AND 1 with a non-black colour → the
+  screen XOR that colour (*inverting*); otherwise transparent.
 - *Monochrome* (no colour bitmap; the mask is double height, AND above XOR):
-  AND 0 → black or white by XOR, opaque; AND 1 & XOR 1 → inverting; AND 1 & XOR 0 →
-  transparent.
-- An overlay cannot invert the screen, so *inverting* pixels are drawn opaque black
-  with a **white outline**: every transparent pixel within radius
-  `r = max(1, round(DPI/96 × 0.8))` (DPI of the monitor under the cursor) of an
-  inverting pixel becomes opaque white. Without it an inverting I-beam is invisible
-  on dark backgrounds.
+  AND 0 → black or white by XOR, opaque; AND 1 & XOR 1 → the screen inverted;
+  AND 1 & XOR 0 → transparent.
+- *Inverting* pixels **really invert** what is under them, as Windows does for its
+  own cursor: a layered window cannot XOR the screen, so the overlay reads the
+  screen under the cursor (`BitBlt` from the screen) and shows it XOR the pixel's
+  colour. They go into a second window directly above the overlay, colour-keyed
+  (`LWA_COLORKEY`, magenta; a result of exactly that colour is nudged by one step),
+  which is left out of screen captures (`WDA_EXCLUDEFROMCAPTURE`), so reading the
+  screen never reads the inverted picture itself; in the overlay those pixels are
+  transparent. (Only a colour-keyed window can be left out of captures, not the
+  per-pixel-alpha overlay; inverting pixels need no partial alpha.) They are
+  recomposed on every cursor event and, while such a cursor is shown, every 50 ms,
+  so the picture follows what changes under a resting mouse (text typed under the
+  I-beam). Scaled, they stay crisp: a pixel inverts when inverting pixels cover at
+  least half of it.
+- Where Windows cannot leave a window out of captures (before Windows 10 2004),
+  inverting pixels are drawn opaque black with a **white outline** instead: every
+  transparent pixel within radius `r = max(1, round(DPI/96 × 0.8))` (DPI of the
+  monitor under the cursor) of an inverting pixel becomes opaque white, so an
+  inverting I-beam stays visible on dark backgrounds.
 
 **Zoom — Auto (default).** Per AnyDesk window, DeGhoster measures how long each
 remote cursor picture was on screen during the **last 10 seconds** (told apart by its
@@ -334,13 +347,15 @@ handling `SHOW`, `HIDE`, `LOCATIONCHANGE` and `NAMECHANGE` with `idObject ==
 OBJID_CURSOR`. Location changes deliver movement, name changes shape changes. On each
 event the current position and cursor are read (`GetCursorPos`, `GetCursorInfo`),
 because events are asynchronous and coalesced. Rendering stays cheap on this path.
+The one timer is the 50 ms refresh of inverting pixels, and it runs only while a
+cursor with inverting pixels is shown over a session window.
 
 ### 10.5 Lifecycle
 
 The overlay is hidden and the cursor restored immediately when the AnyDesk window or
 the global switch is turned off, the cursor leaves AnyDesk, AnyDesk ends, the session is
 locked or DeGhoster shuts down (`--quit`, end-session). *z* does not depend on the
-monitor DPI; only the outline radius does. With no AnyDesk running, the cost is the
+monitor DPI; only the fallback outline radius does. With no AnyDesk running, the cost is the
 event subscription alone.
 
 ### 10.6 Settings window

@@ -7,6 +7,12 @@
 > window still has its own row, eye and tray entry, but the eye switches the AnyDesk
 > program, so all AnyDesk windows switch together; the per-remote opt-out through the
 > window title is gone. See [Specification.md](../Specification.md) sections 4 and 5.
+>
+> Amended: inverting pixels now really invert the screen (point 5). A second,
+> colour-keyed window above the overlay, left out of screen captures, shows the
+> screen under them XOR their colour; black with a white outline remains only as
+> the fallback where Windows cannot leave a window out of captures. Black on a dark
+> background was not readable, outline or not.
 
 ## Context
 
@@ -53,8 +59,11 @@ cases that can be detected precisely and mitigated reversibly. This is one.
    Pictures are told apart by their pixels; nothing is recognized by shape.
 5. **Sharp bilinear upscaling**: nearest neighbour by the integer part of the factor,
    then bilinear to the exact size, on premultiplied pixels with clamped edges.
-   Inverting pixels, which an overlay cannot reproduce, are drawn black with a white
-   outline so an inverting I-beam stays visible on dark backgrounds.
+   Inverting pixels really invert: the overlay cannot XOR the screen, so a second,
+   colour-keyed window left out of screen captures shows the screen under them
+   XOR their colour, refreshed on every cursor event and every 50 ms while such a
+   cursor is shown. Where Windows cannot leave a window out of captures, they are
+   drawn black with a white outline instead.
 6. **The small original is hidden with `MagShowSystemCursor`** while the overlay is
    shown, and restored whenever it is hidden, on quit, on end-session and on session
    lock (`WTSRegisterSessionNotification`).

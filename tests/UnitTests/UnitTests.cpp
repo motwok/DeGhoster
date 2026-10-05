@@ -288,41 +288,56 @@ static void CursorImageTests()
 {
     using namespace cursorimg;
     std::printf("CursorImage tests\n");
-    std::vector<uint8_t> inv;
 
     {   // colour with alpha: premultiplied, nothing inverting
         const uint32_t color[2] = { 0x80FF0000u, 0x00000000u };
         const uint32_t mask[2] = { 0, 0 };
         Image img;
-        Decode(2, 1, color, mask, POINT{ 1, 0 }, img, inv);
+        Decode(2, 1, color, mask, POINT{ 1, 0 }, img);
         Check(img.w == 2 && img.h == 1 && img.hot.x == 1, "Decode keeps size and hotspot");
         Check(img.px[0] == 0x80800000u, "alpha colour is premultiplied");
-        Check(img.px[1] == 0 && inv[0] == 0 && inv[1] == 0, "alpha 0 stays transparent, nothing inverts");
+        Check(img.px[1] == 0 && !img.inverts(), "alpha 0 stays transparent, nothing inverts");
     }
     {   // colour without alpha: the AND mask decides
         const uint32_t color[3] = { 0x00112233u, 0x00FFFFFFu, 0x00000000u };
         const uint32_t mask[3] = { 0x000000u, 0xFFFFFFu, 0xFFFFFFu };
         Image img;
-        Decode(3, 1, color, mask, POINT{ 0, 0 }, img, inv);
+        Decode(3, 1, color, mask, POINT{ 0, 0 }, img);
         Check(img.px[0] == 0xFF112233u, "AND 0 is opaque colour");
-        Check(inv[1] == 1 && img.px[1] == 0, "AND 1 with a colour inverts");
-        Check(inv[2] == 0 && img.px[2] == 0, "AND 1 with black is transparent");
+        Check(img.inverts() && img.xr[1] == 0xFFFFFFFFu && img.px[1] == 0, "AND 1 with a colour XORs the screen with it");
+        Check(img.xr[0] == 0 && img.xr[2] == 0 && img.px[2] == 0, "AND 1 with black is transparent");
     }
     {   // monochrome: AND rows above XOR rows
         const uint32_t mask[8] = { 0, 0, 0xFFFFFFu, 0xFFFFFFu,          // AND
                                    0, 0xFFFFFFu, 0xFFFFFFu, 0 };        // XOR
         Image img;
-        Decode(2, 2, nullptr, mask, POINT{ 0, 0 }, img, inv);
+        Decode(2, 2, nullptr, mask, POINT{ 0, 0 }, img);
         Check(img.w == 2 && img.h == 2, "mono decode halves the mask height");
         Check(img.px[0] == 0xFF000000u, "AND 0 / XOR 0 is black");
         Check(img.px[1] == 0xFFFFFFFFu, "AND 0 / XOR 1 is white");
-        Check(inv[2] == 1 && img.px[2] == 0, "AND 1 / XOR 1 inverts");
-        Check(inv[3] == 0 && img.px[3] == 0, "AND 1 / XOR 0 is transparent");
+        Check(img.inverts() && img.xr[2] == 0xFFFFFFFFu && img.px[2] == 0, "AND 1 / XOR 1 inverts");
+        Check(img.xr[3] == 0 && img.px[3] == 0, "AND 1 / XOR 0 is transparent");
+
+        // The XOR layer over a background: inverting pixels show it inverted,
+        // everything else is the key colour (transparent in the XOR window).
+        const uint32_t key = 0x00FF00FFu;
+        const uint32_t screen[4] = { 0x00102030u, 0x00102030u, 0x00102030u, 0x00102030u };
+        uint32_t out[4] = {};
+        XorLayer(img, screen, out, key);
+        Check(out[0] == key && out[1] == key && out[3] == key, "only inverting pixels are drawn");
+        Check(out[2] == 0x00EFDFCFu, "an inverting pixel shows the screen inverted");
+    }
+    {   // XOR with a colour, as a colour cursor without alpha has it, in place
+        Image img; img.w = 2; img.h = 1; img.px = { 0, 0 }; img.xr = { 0xFF0000FFu, 0xFFFFFFFFu };
+        uint32_t px[2] = { 0x00FF00FFu, 0x0000FF00u };   // the second inverts to exactly the key
+        XorLayer(img, px, px, 0x00FF00FFu);
+        Check(px[0] == 0x00FF0000u, "a coloured XOR pixel XORs the screen with its colour");
+        Check(px[1] != 0x00FF00FFu && ((px[1] ^ 0x00FF00FFu) == 1u), "a result equal to the key is nudged off it");
     }
     {   // outline around a single inverting pixel
-        Image img; img.w = 1; img.h = 1; img.hot = POINT{ 0, 0 }; img.px = { 0 };
-        std::vector<uint8_t> one{ 1 };
-        AddOutline(img, one, 1);
+        Image img; img.w = 1; img.h = 1; img.hot = POINT{ 0, 0 }; img.px = { 0 }; img.xr = { 0xFFFFFFFFu };
+        AddOutline(img, 1);
+        Check(!img.inverts(), "the outline replaces the inverting pixels");
         Check(img.w == 3 && img.h == 3, "the outline grows the canvas by the radius");
         Check(img.hot.x == 1 && img.hot.y == 1, "the hotspot moves with the canvas");
         Check(img.at(1, 1) == 0xFF000000u, "the inverting pixel becomes opaque black");
@@ -332,8 +347,7 @@ static void CursorImageTests()
     }
     {   // no inverting pixel: nothing changes
         Image img; img.w = 2; img.h = 1; img.px = { 0xFF000000u, 0 };
-        std::vector<uint8_t> none{ 0, 0 };
-        AddOutline(img, none, 3);
+        AddOutline(img, 3);
         Check(img.w == 2 && img.h == 1 && img.px[1] == 0, "no inverting pixels, no outline");
     }
     Check(OutlineRadius(96) == 1 && OutlineRadius(120) == 1 && OutlineRadius(144) == 1,
@@ -354,6 +368,9 @@ static void CursorImageTests()
         Check(Key(img) == Key(same) && Key(img) != Key(other), "equal pictures share a key, different ones do not");
         other = img; other.hot.x = 1;
         Check(Key(img) != Key(other), "the hotspot is part of the key");
+        other = img; other.xr.assign(10, 0); other.xr[0] = 0xFFFFFFFFu;
+        Check(Key(img) != Key(other), "inverting pixels are part of the key");
+        Check(VisibleHeight(other) == 4, "inverting pixels count as visible");
     }
 
     {   // integer zoom is exact nearest neighbour: one pixel -> a 5x5 block
@@ -394,43 +411,57 @@ static void CursorImageTests()
         Check(Scale(Image{}, 300).px.empty(), "an empty image scales to nothing");
         Check(Scale(img, 0).w == 1, "a zero zoom is treated as 1 %");
     }
+    {   // XOR pixels scale crisp: nearest neighbour, never blended
+        Image img; img.w = 2; img.h = 1; img.px = { 0, 0 }; img.xr = { 0xFFFFFFFFu, 0 };
+        Image big = Scale(img, 200);
+        Check(big.inverts() && big.xr[0] && big.xr[1] && !big.xr[2] && !big.xr[3] &&
+              big.xr[4] && big.xr[5] && !big.xr[6] && !big.xr[7], "200 % doubles an inverting pixel");
+        Image odd = Scale(img, 150);   // 3 px wide: the middle one is half covered
+        Check(odd.w == 3 && odd.xr[0] == 0xFFFFFFFFu && odd.xr[2] == 0,
+              "at 150 % the inverting pixel stays crisp: covered or not");
+        Check(Scale(Image{ 1, 1, {}, { 0xFF000000u } }, 300).xr.empty(), "no inverting pixels, none after scaling");
+    }
 
     {   // live cursors: the three kinds AnyDesk can hand out
         Image img;
-        Check(!Read(nullptr, 96, img), "Read(null) fails");
-        Check(Read(LoadCursorW(nullptr, IDC_ARROW), 96, img) && img.w > 0 && img.h > 0,
+        Check(!Read(nullptr, img), "Read(null) fails");
+        Check(Read(LoadCursorW(nullptr, IDC_ARROW), img) && img.w > 0 && img.h > 0,
               "the system arrow can be read");
 
         uint32_t px[4 * 6];
         for (auto& c : px) c = 0xFFE02020u;
         BYTE zeros[2 * 6] = {};
         HCURSOR alpha = MakeCursor(4, 6, px, zeros, POINT{ 1, 2 }, false);
-        Check(Read(alpha, 96, img) && img.w == 4 && img.h == 6 && img.hot.x == 1 && img.hot.y == 2 &&
+        Check(Read(alpha, img) && img.w == 4 && img.h == 6 && img.hot.x == 1 && img.hot.y == 2 &&
               img.at(0, 0) == 0xFFE02020u, "an alpha cursor reads back exactly");
         DestroyCursor(alpha);
 
         for (auto& c : px) c = 0;
         HCURSOR empty = MakeCursor(4, 6, px, zeros, POINT{ 0, 0 }, false);
         // alpha all zero + AND 0 + black = opaque black ("colour without alpha")
-        Check(Read(empty, 96, img) && img.at(0, 0) == 0xFF000000u, "a colour cursor without alpha is opaque");
+        Check(Read(empty, img) && img.at(0, 0) == 0xFF000000u, "a colour cursor without alpha is opaque");
         DestroyCursor(empty);
 
         BYTE andOnly[2 * 6];
         memset(andOnly, 0xFF, sizeof(andOnly));
         HCURSOR invisible = MakeCursor(4, 6, px, andOnly, POINT{ 0, 0 }, false);
-        Check(!Read(invisible, 96, img), "a fully transparent cursor has nothing to show");
+        Check(!Read(invisible, img), "a fully transparent cursor has nothing to show");
         DestroyCursor(invisible);
 
-        // 16x16 monochrome with one inverting column: read, outlined, padded.
+        // 16x16 monochrome with one inverting column: read as inverting; the
+        // fallback outline (radius 2 at 200 %) pads it.
         BYTE mono[2 * 16 * 2];
         memset(mono, 0xFF, 2 * 16);         // AND: all transparent ...
         memset(mono + 2 * 16, 0, 2 * 16);   // XOR: ...
         for (int y = 4; y < 12; ++y) mono[2 * 16 + y * 2] = 0x01;   // ... except x = 7 inverting
         HCURSOR ibeam = MakeCursor(16, 16, nullptr, mono, POINT{ 7, 8 }, true);
-        Check(Read(ibeam, 192, img) && img.w == 20 && img.h == 20 && img.hot.x == 9 && img.hot.y == 10,
-              "a mono cursor with inverting pixels gets a radius-2 outline at 200 %");
+        Check(Read(ibeam, img) && img.w == 16 && img.h == 16 && img.inverts() && img.xr[6 * 16 + 7] &&
+              VisibleHeight(img) == 8, "an inverting I-beam is read as inverting, nothing else visible");
+        AddOutline(img, OutlineRadius(192));
+        Check(img.w == 20 && img.h == 20 && img.hot.x == 9 && img.hot.y == 10,
+              "the fallback outline pads the canvas by radius 2 at 200 %");
         Check(img.at(9, 6) == 0xFF000000u && img.at(8, 6) == 0xFFFFFFFFu,
-              "inverting pixels are black with a white rim");
+              "the fallback draws inverting pixels black with a white rim");
         DestroyCursor(ibeam);
     }
 }
@@ -856,7 +887,12 @@ static void CursorOverlayTests()
         Check((ex & need) == need, "the overlay is layered, click-through, topmost, no-activate, tool window");
         Check(SendMessageW(w, WM_NCHITTEST, 0, 0) == HTTRANSPARENT, "the overlay never takes a hit test");
         Check(SendMessageW(w, WM_MOUSEACTIVATE, 0, 0) == MA_NOACTIVATE, "the overlay never activates");
+        DWORD affinity = 0xFF;
+        Check(GetWindowDisplayAffinity(w, &affinity) && affinity == WDA_NONE,
+              "the overlay is captured normally while it shows nothing inverting");
     }
+    Check(ov.invertsForReal(), "this Windows lets the overlay invert for real");
+    SendMessageW(w, WM_TIMER, 1, 0);   // a refresh tick with nothing shown stops itself
     // The cursor is not over a session window here, so it must stay hidden -
     // unless the developer's own AnyDesk or RDP session happens to be under it.
     ov.setZoom(300);
