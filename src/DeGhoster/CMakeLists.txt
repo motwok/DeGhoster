@@ -14,6 +14,7 @@ add_executable(DeGhosterApp WIN32
   Theme.cpp
   ProcessUtil.cpp
   HoverButton.cpp
+  PopupMenu.cpp
   Gfx.cpp
   Loc.cpp
   Autostart.cpp

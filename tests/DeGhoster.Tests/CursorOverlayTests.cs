@@ -65,13 +65,60 @@ public class CursorOverlayTests
         }
         else
         {
-            // 32x32 monochrome with inverting pixels: outlined, so the canvas grows
-            // by the outline radius (DPI of the monitor) on every side.
-            int r = Math.Max(1, (int)Math.Round(MonitorDpi(x, y) / 96.0 * 0.8, MidpointRounding.AwayFromZero));
-            int side = (32 + 2 * r) * 3, hot = (16 + r) * 3;
-            AssertRect(ov, x - hot, y - hot, side, side);
+            // 32x32 monochrome with inverting pixels: they really invert the screen,
+            // so there is no outline and the canvas keeps its size. The inverting
+            // pixels are in a second window of the same size on top of it.
+            AssertRect(ov, x - 48, y - 48, 96, 96);
+            IntPtr xor = FindWindow(XorClass, null);
+            Assert.True(WaitUntil(() => IsWindowVisible(xor) && Rect(xor).left == Rect(ov).left &&
+                                        Rect(xor).top == Rect(ov).top && Rect(xor).right == Rect(ov).right,
+                                  TimeSpan.FromSeconds(3)), $"no inverting window over the overlay: {Describe(xor)}");
         }
     }
+
+    [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
+    public void Inverting_pixels_get_a_window_left_out_of_screen_captures()
+    {
+        using var run = Run.Start("64", "alpha", zoom: 300);
+        run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+        IntPtr xor = FindWindow(XorClass, null);
+        Assert.True(xor != IntPtr.Zero, "this Windows has no window for inverting pixels");
+        Assert.Equal(WDA_EXCLUDEFROMCAPTURE, DisplayAffinity(xor));   // it must never read itself
+        Assert.Equal(WDA_NONE, DisplayAffinity(ov));                  // the overlay itself is captured normally
+        Assert.False(IsWindowVisible(xor), "an alpha cursor has no inverting pixels to show");
+
+        using var mono = Sim.Start("64", "mono", "ad_win#2", SimX + SimW + 20, SimY, 200, 200);
+        run.MoveTo(SimX + SimW + 120, SimY + 120);
+        Assert.True(WaitUntil(() => IsWindowVisible(ov) && IsWindowVisible(xor), TimeSpan.FromSeconds(3)),
+                    "an inverting cursor did not show its inverting window");
+
+        // It follows the mouse, and a resting mouse keeps it (the refresh timer).
+        run.MoveTo(SimX + SimW + 90, SimY + 150);
+        Assert.True(WaitUntil(() => Rect(xor).left == Rect(ov).left && Rect(xor).top == Rect(ov).top,
+                              TimeSpan.FromSeconds(3)), "the inverting window did not follow the overlay");
+        Thread.Sleep(300);
+        Assert.True(IsWindowVisible(xor), "the inverting window vanished under a resting mouse");
+
+        // Back on a cursor without inverting pixels, and on a system cursor: gone.
+        run.MoveInside();
+        Assert.True(WaitUntil(() => IsWindowVisible(ov) && !IsWindowVisible(xor), TimeSpan.FromSeconds(3)),
+                    "the inverting window stayed over an ordinary cursor");
+        run.MoveTo(SimX + SimW + 120, SimY + 120);
+        Assert.True(WaitUntil(() => IsWindowVisible(xor), TimeSpan.FromSeconds(3)), "the inverting window did not come back");
+        run.MoveTo(SimX + SimW / 2, SimY + Band / 2);
+        Assert.True(WaitUntil(() => !IsWindowVisible(ov) && !IsWindowVisible(xor), TimeSpan.FromSeconds(3)),
+                    "the inverting window stayed when the overlay was hidden");
+    }
+
+    private const string XorClass = "DeGhosterCursorOverlayXor";
+    private const uint WDA_NONE = 0x0, WDA_EXCLUDEFROMCAPTURE = 0x11;
+
+    private static uint DisplayAffinity(IntPtr h) => GetWindowDisplayAffinity(h, out uint a) ? a : 0xFFFFFFFF;
+
+    [DllImport("user32.dll")] private static extern bool GetWindowDisplayAffinity(IntPtr h, out uint affinity);
 
     [SkippableFact]
 
@@ -89,12 +136,15 @@ public class CursorOverlayTests
         run.MoveInside();
         Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "overlay did not come back");
 
-        // Outside the AnyDesk window.
-        run.MoveTo(SimX + SimW + 120, SimY + SimH + 60);
+        // Outside the AnyDesk window: over another program's own UI. A window of
+        // this test's, so a real remote session on the desktop cannot be there.
+        using var other = Sim.Start("64", "alpha", "NotAnyDesk#1", SimX + SimW + 20, SimY, 200, 200);
+        run.MoveTo(SimX + SimW + 120, SimY + Band / 2);
         Assert.True(WaitUntil(() => !IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "overlay outside AnyDesk");
 
         // A window with the same custom cursors but another class is not AnyDesk.
-        using var other = Sim.Start("64", "alpha", "NotAnyDesk#1", SimX + SimW + 20, SimY, 200, 200);
+        run.MoveInside();
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "overlay did not come back");
         run.MoveTo(SimX + SimW + 120, SimY + 120);
         Thread.Sleep(600);
         Assert.False(IsWindowVisible(ov), "overlay over a window that is not AnyDesk");
@@ -290,13 +340,165 @@ public class CursorOverlayTests
         // developer machine has windows of its own), so wait until it settles.
         int with = StableCount(run.Host);
 
+        // A selected row stays selected when the list is rebuilt for a new window.
+        IntPtr list = GetDlgItem(run.Host, IDC_LIST);
+        SendMessage(list, WM_KEYDOWN, (IntPtr)VK_HOME, IntPtr.Zero);
+        Assert.True(Selected(list) == 0, "the first row could not be selected");
+
         using (Sim.Start("64", "alpha", "ad_win#2", SimX + SimW + 20, SimY, 200, 200))
+        {
             Assert.True(WaitUntil(() => Count(run.Host) == with + 1, TimeSpan.FromSeconds(5)),
                         "a second AnyDesk window was not counted as a window of its own");
+            Assert.True(Selected(list) >= 0, "the rebuilt list lost the selection");
+        }
         Assert.True(WaitUntil(() => Count(run.Host) == with, TimeSpan.FromSeconds(5)),
                     $"a closed AnyDesk window was not dropped from the count ({with} -> {Count(run.Host)})");
         Assert.True((int)SendMessage(GetDlgItem(run.Host, IDC_LIST), LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero) == with,
                     "the list does not show every counted window");
+    }
+
+    // ---- RDP control (mstsc, WSLg, connection managers) ---------------------------
+
+    private const string RdpHostClass = "RdpHostSim";
+    private const string RdpChain = "default";   // UIMainClass > UIContainerClass > IHWindowClass
+
+    [SkippableTheory]
+
+    [Trait("Category", "InteractiveInput")]
+    [InlineData("64")]
+    [InlineData("32")]
+    public void Rdp_overlay_shows_over_the_input_window_only(string bits)
+    {
+        using var run = Run.Start(bits, "alpha", zoom: 300, rdp: RdpChain);
+        var (x, y) = run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+        AssertRect(ov, x - 6, y - 9, 48, 72);   // 16x24, hotspot (2,3), all x3
+
+        // The host's own UI (here the band above the control) is not the session.
+        run.MoveTo(SimX + SimW / 2, SimY + Band / 2);
+        Assert.True(WaitUntil(() => !IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "overlay over the host's own UI");
+
+        int before = run.Sim.Clicks();
+        (x, y) = run.MoveInside();
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "overlay did not come back");
+        ClickAt(x, y);
+        Assert.True(WaitUntil(() => run.Sim.Clicks() == before + 1, TimeSpan.FromSeconds(3)),
+                    "the click did not reach the RDP input window under the overlay");
+    }
+
+    [SkippableTheory]
+
+    [Trait("Category", "InteractiveInput")]
+    [InlineData("UIContainerClass,UIMainClass,IHWindowClass")]   // the classes in another order
+    [InlineData("UIMainClass,IHWindowClass")]                    // no container
+    [InlineData("TscShellAxHostClass,UIContainerClass,IHWindowClass")]   // wrong grandparent
+    public void Rdp_overlay_stays_off_over_a_wrong_class_chain(string chain)
+    {
+        using var run = Run.Start("64", "alpha", zoom: 300, rdp: RdpChain);
+        run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+
+        using var other = Sim.Start("64", "alpha", "RdpHostSimBad", SimX + SimW + 20, SimY, 200, 200, chain);
+        run.MoveTo(SimX + SimW + 120, SimY + 120);
+        Thread.Sleep(600);
+        Assert.False(IsWindowVisible(ov), $"overlay over the chain {chain}");
+    }
+
+    [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
+    public void Rdp_and_AnyDesk_are_switched_independently()
+    {
+        // Two programs: AnyDesk is CursorSim64.exe, the RDP host CursorSim32.exe.
+        using var run = Run.Start("64", "alpha", zoom: 300);
+        using var rdp = Sim.Start("32", "alpha", RdpHostClass, SimX + SimW + 20, SimY, 200, 200, RdpChain);
+        (int x, int y) inRdp = (SimX + SimW + 120, SimY + 120);
+        run.MoveTo(inRdp.x, inRdp.y);
+        IntPtr ov = run.WaitOverlay();
+
+        PostMessage(run.Host, WM_EYE_TOGGLE, rdp.Hwnd, IntPtr.Zero);
+        Assert.True(WaitUntil(() => !IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "switching RDP off kept the overlay");
+        Assert.True(WaitUntil(() => DisabledKeys().Any(k => k.EndsWith("\\CursorSim32.exe", StringComparison.OrdinalIgnoreCase)),
+                              TimeSpan.FromSeconds(3)), "the RDP host's program was not switched off");
+        run.MoveInside();
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "switching RDP off also switched AnyDesk off");
+        run.MoveTo(inRdp.x, inRdp.y);
+        Thread.Sleep(400);
+        Assert.False(IsWindowVisible(ov), "the overlay came back over the switched-off RDP window");
+
+        PostMessage(run.Host, WM_EYE_TOGGLE, rdp.Hwnd, IntPtr.Zero);
+        run.MoveTo(inRdp.x + 5, inRdp.y);
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)), "switching RDP on did not bring it back");
+    }
+
+    [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
+    public void Rdp_animated_cursor_is_followed_frame_by_frame()
+    {
+        // 20 frames of 16x20 .. 16x39, each its own cursor handle, every 50 ms:
+        // how the RDP client delivers an animated cursor.
+        using var run = Run.Start("64", "anim", zoom: 100, rdp: RdpChain);
+        var (x, y) = run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+        var heights = new HashSet<int>();
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < 2500 && heights.Count < 20)
+        {
+            // Only while the mouse is still where the test put it: someone using the
+            // machine meanwhile would measure another window's cursor.
+            GetCursorPos(out POINT now);
+            if (now.x == x && now.y == y && IsWindowVisible(ov)) heights.Add(Height(ov));
+            Thread.Sleep(5);
+        }
+        Assert.True(heights.Count >= 15, $"the overlay followed only {heights.Count} of 20 frames");
+        Assert.All(heights, h => Assert.InRange(h, 20, 39));
+    }
+
+    [Fact]
+    public void Rdp_windows_are_listed_and_counted()
+    {
+        using var run = Run.Start("64", "alpha", zoom: 300, needCursor: false, rdp: RdpChain);
+        Assert.True(WaitUntil(() => Count(run.Host) >= 1, TimeSpan.FromSeconds(5)), "the RDP window was not counted");
+        int with = StableCount(run.Host);
+
+        using (Sim.Start("32", "alpha", RdpHostClass, SimX + SimW + 20, SimY, 200, 200, RdpChain))
+            Assert.True(WaitUntil(() => Count(run.Host) == with + 1, TimeSpan.FromSeconds(5)),
+                        "a second RDP window was not counted as a window of its own");
+        Assert.True(WaitUntil(() => Count(run.Host) == with, TimeSpan.FromSeconds(5)),
+                    $"a closed RDP window was not dropped from the count ({with} -> {Count(run.Host)})");
+
+        // A window with the classes in the wrong order is not counted.
+        using (Sim.Start("64", "alpha", "RdpHostSimBad", SimX + SimW + 20, SimY, 200, 200,
+                         "UIContainerClass,UIMainClass,IHWindowClass"))
+        {
+            Thread.Sleep(1500);
+            Assert.Equal(with, Count(run.Host));
+        }
+    }
+
+    private const uint LVM_GETNEXTITEM = 0x100C;
+    private const int LVNI_SELECTED = 0x0002;
+
+    private static int Selected(IntPtr list) =>
+        (int)SendMessage(list, LVM_GETNEXTITEM, (IntPtr)(-1), (IntPtr)LVNI_SELECTED);
+
+    [SkippableFact]
+
+    [Trait("Category", "InteractiveInput")]
+    public void Auto_zoom_forgets_closed_windows()
+    {
+        // Auto keeps a zoom per session window; a closed one is dropped when the
+        // cursor reaches a new window.
+        using var run = Run.Start("64", "alpha", zoom: null);
+        using var rdp = Sim.Start("32", "alpha", RdpHostClass, SimX + SimW + 20, SimY, 200, 200, RdpChain);
+        run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+        run.Sim.Dispose();
+        Assert.True(run.Sim.P.WaitForExit(5000), "the first session window did not close");
+        run.MoveTo(SimX + SimW + 120, SimY + 120);
+        Assert.True(WaitUntil(() => IsWindowVisible(ov), TimeSpan.FromSeconds(3)),
+                    "the overlay did not follow onto the second session window");
     }
 
     // The number in the status window's title, "DeGhoster — N Ghosts".
@@ -427,8 +629,9 @@ public class CursorOverlayTests
         public IntPtr Host;
 
         // `zoom` is a fixed zoom (Auto off); null leaves Auto on, the default.
+        // `rdp` makes the simulator a program hosting the RDP control (see Sim).
         public static Run Start(string bits, string kind, int? zoom, bool needCursor = true,
-                                Dictionary<string, string>? env = null)
+                                Dictionary<string, string>? env = null, string? rdp = null)
         {
             SetThreadDpiAwarenessContext(new IntPtr(-4));   // physical pixels, like DeGhoster
             var r = new Run { Build = FindBuildDir() };
@@ -440,7 +643,9 @@ public class CursorOverlayTests
             }
             try
             {
-                r.Sim = Sim.Start(bits, kind, "ad_win#1", SimX, SimY, SimW, SimH);
+                r.Sim = rdp == null
+                    ? Sim.Start(bits, kind, "ad_win#1", SimX, SimY, SimW, SimH)
+                    : Sim.Start(bits, kind, RdpHostClass, SimX, SimY, SimW, SimH, rdp);
                 var psi = new ProcessStartInfo(Path.Combine(r.Build, "DeGhoster.exe"), "--taskbar")
                           { UseShellExecute = false, WorkingDirectory = r.Build };
                 TestSettings.Apply(psi, env);
@@ -499,7 +704,7 @@ public class CursorOverlayTests
                 ov = FindWindow(OverlayClass, null);
                 return ov != IntPtr.Zero && IsWindowVisible(ov);
             }, TimeSpan.FromSeconds(6));
-            Assert.True(ok, "the overlay did not appear over the AnyDesk window");
+            Assert.True(ok, "the overlay did not appear over the session window");
             Thread.Sleep(150);   // let a coalesced last move land
             return ov;
         }
@@ -519,12 +724,16 @@ public class CursorOverlayTests
         public string Title = "";
         public IntPtr Hwnd;
 
-        public static Sim Start(string bits, string kind, string cls, int x, int y, int w, int h)
+        // `rdp` is a chain of child classes (outermost first, "default" for the
+        // real RDP control's) for a program hosting the RDP control; then `cls`
+        // is the host's top-level class and Hwnd that top-level window.
+        public static Sim Start(string bits, string kind, string cls, int x, int y, int w, int h, string? rdp = null)
         {
             string build = FindBuildDir();
             string title = "ADSIM-" + Guid.NewGuid().ToString("N");
+            string rdpArg = rdp == null ? "" : $" --rdp \"{rdp}\"";
             var psi = new ProcessStartInfo(Path.Combine(build, $"CursorSim{bits}.exe"),
-                $"--kind {kind} --class \"{cls}\" --title {title} --x {x} --y {y} --w {w} --h {h} --band {Band} --timeout 120")
+                $"--kind {kind} --class \"{cls}\" --title {title} --x {x} --y {y} --w {w} --h {h} --band {Band} --timeout 120{rdpArg}")
                 { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = build };
             var s = new Sim { P = Process.Start(psi)!, Title = title };
             s.Hwnd = WaitFor(() => FindWindow(cls, title), TimeSpan.FromSeconds(8));

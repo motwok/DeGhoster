@@ -21,6 +21,10 @@ comfortable size instead — see [Enlarging the AnyDesk cursor](#enlarging-the-a
 Here, too, the fix really belongs elsewhere: AnyDesk's Windows client should scale the remote
 cursor to your display itself.
 
+The same works in **Remote Desktop (RDP)** sessions — Remote Desktop Connection, Linux apps
+under WSL and other programs built on Windows' Remote Desktop — see
+[Enlarging the Remote Desktop cursor](#enlarging-the-remote-desktop-cursor).
+
 Which vendors' defects DeGhoster works around, and what they would need to fix, is listed in
 the README under [Whose bugs are these?](../README.md#whose-bugs-are-these).
 
@@ -87,7 +91,8 @@ The menu also has **Settings…**, which opens the settings window.
 
 The status window shows every window DeGhoster currently takes care of, one per line, as
 **Window title (program)** — for example `WhatsApp (WhatsApp.Root.exe)` for a ghost window or
-`123 456 789 - AnyDesk (AnyDesk.exe)` for an AnyDesk session whose cursor it enlarges. The
+`123 456 789 - AnyDesk (AnyDesk.exe)` or `server - Remote Desktop Connection (mstsc.exe)` for a
+remote session whose cursor it enlarges. The
 window's title bar tells you how many it's handling, e.g. *DeGhoster — 2 Ghosts*.
 
 Each line has a small **eye icon** on the right:
@@ -99,7 +104,9 @@ Click the eye to switch that window's **program** on or off: if a program has se
 in the list, they all switch together, and clicking any of their eyes switches them all back.
 Updates of the program keep your choice. Ignored windows stay in the list so you can turn
 them back on any time. You can do the same from the tray menu, where every detected window
-appears as its own entry, in the same order as in the list.
+appears as its own entry, in the same order as in the list. The menu stays open while you
+switch entries on and off, so you can change several in one go; it closes as soon as you
+click somewhere else.
 
 A ghost window whose program hides it — for example when you minimize WhatsApp — stays in
 the list, **greyed out**, until the program really closes it. It stays harmless meanwhile.
@@ -113,7 +120,7 @@ The **power button** in the toolbar is the master switch:
 
 When you pause it, DeGhoster keeps *watching* and keeps the list up to date — it just stops
 acting until you switch it back on. The tray menu has the same **Active / Inactive** switch.
-Pausing also switches off the enlarged AnyDesk cursor; the zoom setting is greyed out until
+Pausing also switches off the enlarged remote cursor; the zoom setting is greyed out until
 you switch DeGhoster back on.
 
 ## Enlarging the AnyDesk cursor
@@ -167,6 +174,35 @@ Everything is saved immediately; **Close** or **Esc** closes the window.
 - Some remote computers send the text cursor (I-beam) at its normal size even when the arrow
   is enlarged, so the text cursor can look a little small next to the arrow.
 
+## Enlarging the Remote Desktop cursor
+
+Remote Desktop does not shrink the remote cursor the way AnyDesk does: it shows the remote
+computer's pointer at the size that computer is set to. If the remote runs at a normal
+scaling and your own screen at a large one (for example 4K at 250 %), that pointer still
+looks tiny. You could make it larger on the remote computer — but you would have to do that
+on every single computer and server you connect to. DeGhoster does it once, here, for all of
+them.
+
+It works exactly like the AnyDesk cursor above: an enlarged copy follows the mouse over the
+remote screen, the size is automatic (or the fixed zoom from **Settings**, shared with
+AnyDesk), and clicks go straight through. Over the program's own parts — the connection bar,
+toolbars, a connection list — you see your normal cursor.
+
+It covers every program that uses Windows' own Remote Desktop, for example:
+
+- **Remote Desktop Connection** (`mstsc`)
+- graphical **Linux apps under WSL** (WSLg)
+- **Hyper-V**'s virtual machine connection (VMConnect)
+- connection managers such as **Remote Desktop Connection Manager** and **mRemoteNG**
+
+Remote Desktop Connection and WSLg are tested; the others use the same Windows component
+and should work just the same. Remote desktop programs with their own technique (for example
+ones based on FreeRDP) are not covered.
+
+Every Remote Desktop window appears in the status window's list with its own **eye**, on by
+default, like an AnyDesk window. Switching it off affects only that program's windows;
+AnyDesk keeps its enlarged cursor, and the other way round.
+
 ## The Settings button
 
 The **gear** button (left of the **i**) opens the settings window — see
@@ -186,7 +222,7 @@ restored to normal automatically.
 
 ## It remembers your choices
 
-Any program you switch off, whether DeGhoster is paused, and your AnyDesk cursor size settings
+Any program you switch off, whether DeGhoster is paused, and your remote cursor size settings
 are remembered between restarts. When you start DeGhoster again, it picks up right where you left
 off.
 
@@ -210,6 +246,9 @@ off.
   fixed size, switch **Automatic size** off in the settings window and adjust **Zoom**.
 - **The AnyDesk cursor looks blurry.** Enlarge the mouse pointer on the remote computer and
   lower the zoom here.
+- **The Remote Desktop cursor is still tiny.** The same checks as for AnyDesk apply: power
+  button green, the Remote Desktop window's eye open. The enlarged cursor only appears over the
+  remote screen, not over the connection bar or the program's own menus.
 - **The menus are in the wrong language.** DeGhoster follows your **Windows display language**.
   Make sure that language was ticked during installation (English is always available as a
   fallback); then sign out and back in.

@@ -23,6 +23,10 @@
 #include "GhostEngine.h"
 #include "Gfx.h"
 #include "Loc.h"
+#include "PopupMenu.h"
+
+#include <functional>
+#include <uxtheme.h>
 
 #include <commctrl.h>
 
@@ -235,6 +239,26 @@ static void AnyDeskClassTests()
     Check(!CursorOverlay::IsAnyDeskClass(nullptr), "null does not match");
 }
 
+static void RdpClassTests()
+{
+    std::printf("RDP class tests\n");
+    Check(CursorOverlay::IsRdpInputChain(L"IHWindowClass", L"UIContainerClass", L"UIMainClass"),
+          "the RDP control's input window matches");
+    Check(!CursorOverlay::IsRdpInputChain(L"OPContainerClass", L"UIContainerClass", L"UIMainClass"),
+          "the output painter does not match");
+    Check(!CursorOverlay::IsRdpInputChain(L"IHWindowClass", L"UIMainClass", L"UIContainerClass"),
+          "the parents in another order do not match");
+    Check(!CursorOverlay::IsRdpInputChain(L"IHWindowClass", L"UIContainerClass", L"TscShellAxHostClass"),
+          "a wrong grandparent does not match");
+    Check(!CursorOverlay::IsRdpInputChain(L"ihwindowclass", L"UIContainerClass", L"UIMainClass"),
+          "the match is case-sensitive");
+    Check(!CursorOverlay::IsRdpInputChain(L"IHWindowClass#1", L"UIContainerClass", L"UIMainClass"),
+          "a suffix does not match");
+    Check(!CursorOverlay::IsRdpInputChain(L"IHWindowClass", L"UIContainerClass", nullptr),
+          "a missing grandparent does not match");
+    Check(!CursorOverlay::IsRdpInputChain(nullptr, nullptr, nullptr), "null does not match");
+}
+
 static HCURSOR MakeCursor(int w, int h, const uint32_t* argb, const BYTE* andBits, POINT hot, bool mono)
 {
     HBITMAP color = nullptr;
@@ -264,41 +288,56 @@ static void CursorImageTests()
 {
     using namespace cursorimg;
     std::printf("CursorImage tests\n");
-    std::vector<uint8_t> inv;
 
     {   // colour with alpha: premultiplied, nothing inverting
         const uint32_t color[2] = { 0x80FF0000u, 0x00000000u };
         const uint32_t mask[2] = { 0, 0 };
         Image img;
-        Decode(2, 1, color, mask, POINT{ 1, 0 }, img, inv);
+        Decode(2, 1, color, mask, POINT{ 1, 0 }, img);
         Check(img.w == 2 && img.h == 1 && img.hot.x == 1, "Decode keeps size and hotspot");
         Check(img.px[0] == 0x80800000u, "alpha colour is premultiplied");
-        Check(img.px[1] == 0 && inv[0] == 0 && inv[1] == 0, "alpha 0 stays transparent, nothing inverts");
+        Check(img.px[1] == 0 && !img.inverts(), "alpha 0 stays transparent, nothing inverts");
     }
     {   // colour without alpha: the AND mask decides
         const uint32_t color[3] = { 0x00112233u, 0x00FFFFFFu, 0x00000000u };
         const uint32_t mask[3] = { 0x000000u, 0xFFFFFFu, 0xFFFFFFu };
         Image img;
-        Decode(3, 1, color, mask, POINT{ 0, 0 }, img, inv);
+        Decode(3, 1, color, mask, POINT{ 0, 0 }, img);
         Check(img.px[0] == 0xFF112233u, "AND 0 is opaque colour");
-        Check(inv[1] == 1 && img.px[1] == 0, "AND 1 with a colour inverts");
-        Check(inv[2] == 0 && img.px[2] == 0, "AND 1 with black is transparent");
+        Check(img.inverts() && img.xr[1] == 0xFFFFFFFFu && img.px[1] == 0, "AND 1 with a colour XORs the screen with it");
+        Check(img.xr[0] == 0 && img.xr[2] == 0 && img.px[2] == 0, "AND 1 with black is transparent");
     }
     {   // monochrome: AND rows above XOR rows
         const uint32_t mask[8] = { 0, 0, 0xFFFFFFu, 0xFFFFFFu,          // AND
                                    0, 0xFFFFFFu, 0xFFFFFFu, 0 };        // XOR
         Image img;
-        Decode(2, 2, nullptr, mask, POINT{ 0, 0 }, img, inv);
+        Decode(2, 2, nullptr, mask, POINT{ 0, 0 }, img);
         Check(img.w == 2 && img.h == 2, "mono decode halves the mask height");
         Check(img.px[0] == 0xFF000000u, "AND 0 / XOR 0 is black");
         Check(img.px[1] == 0xFFFFFFFFu, "AND 0 / XOR 1 is white");
-        Check(inv[2] == 1 && img.px[2] == 0, "AND 1 / XOR 1 inverts");
-        Check(inv[3] == 0 && img.px[3] == 0, "AND 1 / XOR 0 is transparent");
+        Check(img.inverts() && img.xr[2] == 0xFFFFFFFFu && img.px[2] == 0, "AND 1 / XOR 1 inverts");
+        Check(img.xr[3] == 0 && img.px[3] == 0, "AND 1 / XOR 0 is transparent");
+
+        // The XOR layer over a background: inverting pixels show it inverted,
+        // everything else is the key colour (transparent in the XOR window).
+        const uint32_t key = 0x00FF00FFu;
+        const uint32_t screen[4] = { 0x00102030u, 0x00102030u, 0x00102030u, 0x00102030u };
+        uint32_t out[4] = {};
+        XorLayer(img, screen, out, key);
+        Check(out[0] == key && out[1] == key && out[3] == key, "only inverting pixels are drawn");
+        Check(out[2] == 0x00EFDFCFu, "an inverting pixel shows the screen inverted");
+    }
+    {   // XOR with a colour, as a colour cursor without alpha has it, in place
+        Image img; img.w = 2; img.h = 1; img.px = { 0, 0 }; img.xr = { 0xFF0000FFu, 0xFFFFFFFFu };
+        uint32_t px[2] = { 0x00FF00FFu, 0x0000FF00u };   // the second inverts to exactly the key
+        XorLayer(img, px, px, 0x00FF00FFu);
+        Check(px[0] == 0x00FF0000u, "a coloured XOR pixel XORs the screen with its colour");
+        Check(px[1] != 0x00FF00FFu && ((px[1] ^ 0x00FF00FFu) == 1u), "a result equal to the key is nudged off it");
     }
     {   // outline around a single inverting pixel
-        Image img; img.w = 1; img.h = 1; img.hot = POINT{ 0, 0 }; img.px = { 0 };
-        std::vector<uint8_t> one{ 1 };
-        AddOutline(img, one, 1);
+        Image img; img.w = 1; img.h = 1; img.hot = POINT{ 0, 0 }; img.px = { 0 }; img.xr = { 0xFFFFFFFFu };
+        AddOutline(img, 1);
+        Check(!img.inverts(), "the outline replaces the inverting pixels");
         Check(img.w == 3 && img.h == 3, "the outline grows the canvas by the radius");
         Check(img.hot.x == 1 && img.hot.y == 1, "the hotspot moves with the canvas");
         Check(img.at(1, 1) == 0xFF000000u, "the inverting pixel becomes opaque black");
@@ -308,8 +347,7 @@ static void CursorImageTests()
     }
     {   // no inverting pixel: nothing changes
         Image img; img.w = 2; img.h = 1; img.px = { 0xFF000000u, 0 };
-        std::vector<uint8_t> none{ 0, 0 };
-        AddOutline(img, none, 3);
+        AddOutline(img, 3);
         Check(img.w == 2 && img.h == 1 && img.px[1] == 0, "no inverting pixels, no outline");
     }
     Check(OutlineRadius(96) == 1 && OutlineRadius(120) == 1 && OutlineRadius(144) == 1,
@@ -330,6 +368,9 @@ static void CursorImageTests()
         Check(Key(img) == Key(same) && Key(img) != Key(other), "equal pictures share a key, different ones do not");
         other = img; other.hot.x = 1;
         Check(Key(img) != Key(other), "the hotspot is part of the key");
+        other = img; other.xr.assign(10, 0); other.xr[0] = 0xFFFFFFFFu;
+        Check(Key(img) != Key(other), "inverting pixels are part of the key");
+        Check(VisibleHeight(other) == 4, "inverting pixels count as visible");
     }
 
     {   // integer zoom is exact nearest neighbour: one pixel -> a 5x5 block
@@ -370,43 +411,57 @@ static void CursorImageTests()
         Check(Scale(Image{}, 300).px.empty(), "an empty image scales to nothing");
         Check(Scale(img, 0).w == 1, "a zero zoom is treated as 1 %");
     }
+    {   // XOR pixels scale crisp: nearest neighbour, never blended
+        Image img; img.w = 2; img.h = 1; img.px = { 0, 0 }; img.xr = { 0xFFFFFFFFu, 0 };
+        Image big = Scale(img, 200);
+        Check(big.inverts() && big.xr[0] && big.xr[1] && !big.xr[2] && !big.xr[3] &&
+              big.xr[4] && big.xr[5] && !big.xr[6] && !big.xr[7], "200 % doubles an inverting pixel");
+        Image odd = Scale(img, 150);   // 3 px wide: the middle one is half covered
+        Check(odd.w == 3 && odd.xr[0] == 0xFFFFFFFFu && odd.xr[2] == 0,
+              "at 150 % the inverting pixel stays crisp: covered or not");
+        Check(Scale(Image{ 1, 1, {}, { 0xFF000000u } }, 300).xr.empty(), "no inverting pixels, none after scaling");
+    }
 
     {   // live cursors: the three kinds AnyDesk can hand out
         Image img;
-        Check(!Read(nullptr, 96, img), "Read(null) fails");
-        Check(Read(LoadCursorW(nullptr, IDC_ARROW), 96, img) && img.w > 0 && img.h > 0,
+        Check(!Read(nullptr, img), "Read(null) fails");
+        Check(Read(LoadCursorW(nullptr, IDC_ARROW), img) && img.w > 0 && img.h > 0,
               "the system arrow can be read");
 
         uint32_t px[4 * 6];
         for (auto& c : px) c = 0xFFE02020u;
         BYTE zeros[2 * 6] = {};
         HCURSOR alpha = MakeCursor(4, 6, px, zeros, POINT{ 1, 2 }, false);
-        Check(Read(alpha, 96, img) && img.w == 4 && img.h == 6 && img.hot.x == 1 && img.hot.y == 2 &&
+        Check(Read(alpha, img) && img.w == 4 && img.h == 6 && img.hot.x == 1 && img.hot.y == 2 &&
               img.at(0, 0) == 0xFFE02020u, "an alpha cursor reads back exactly");
         DestroyCursor(alpha);
 
         for (auto& c : px) c = 0;
         HCURSOR empty = MakeCursor(4, 6, px, zeros, POINT{ 0, 0 }, false);
         // alpha all zero + AND 0 + black = opaque black ("colour without alpha")
-        Check(Read(empty, 96, img) && img.at(0, 0) == 0xFF000000u, "a colour cursor without alpha is opaque");
+        Check(Read(empty, img) && img.at(0, 0) == 0xFF000000u, "a colour cursor without alpha is opaque");
         DestroyCursor(empty);
 
         BYTE andOnly[2 * 6];
         memset(andOnly, 0xFF, sizeof(andOnly));
         HCURSOR invisible = MakeCursor(4, 6, px, andOnly, POINT{ 0, 0 }, false);
-        Check(!Read(invisible, 96, img), "a fully transparent cursor has nothing to show");
+        Check(!Read(invisible, img), "a fully transparent cursor has nothing to show");
         DestroyCursor(invisible);
 
-        // 16x16 monochrome with one inverting column: read, outlined, padded.
+        // 16x16 monochrome with one inverting column: read as inverting; the
+        // fallback outline (radius 2 at 200 %) pads it.
         BYTE mono[2 * 16 * 2];
         memset(mono, 0xFF, 2 * 16);         // AND: all transparent ...
         memset(mono + 2 * 16, 0, 2 * 16);   // XOR: ...
         for (int y = 4; y < 12; ++y) mono[2 * 16 + y * 2] = 0x01;   // ... except x = 7 inverting
         HCURSOR ibeam = MakeCursor(16, 16, nullptr, mono, POINT{ 7, 8 }, true);
-        Check(Read(ibeam, 192, img) && img.w == 20 && img.h == 20 && img.hot.x == 9 && img.hot.y == 10,
-              "a mono cursor with inverting pixels gets a radius-2 outline at 200 %");
+        Check(Read(ibeam, img) && img.w == 16 && img.h == 16 && img.inverts() && img.xr[6 * 16 + 7] &&
+              VisibleHeight(img) == 8, "an inverting I-beam is read as inverting, nothing else visible");
+        AddOutline(img, OutlineRadius(192));
+        Check(img.w == 20 && img.h == 20 && img.hot.x == 9 && img.hot.y == 10,
+              "the fallback outline pads the canvas by radius 2 at 200 %");
         Check(img.at(9, 6) == 0xFF000000u && img.at(8, 6) == 0xFFFFFFFFu,
-              "inverting pixels are black with a white rim");
+              "the fallback draws inverting pixels black with a white rim");
         DestroyCursor(ibeam);
     }
 }
@@ -665,6 +720,22 @@ static HWND MakeTopLevel(const wchar_t* cls, const wchar_t* title, DWORD ex)
     return h;
 }
 
+// A chain of visible child windows, outermost first, below `parent`; returns the
+// innermost one.
+static HWND MakeChain(HWND parent, std::initializer_list<const wchar_t*> classes)
+{
+    for (const wchar_t* cls : classes) {
+        WNDCLASSEXW wc{ sizeof(wc) };
+        wc.lpfnWndProc = DefWindowProcW;
+        wc.hInstance = GetModuleHandleW(nullptr);
+        wc.lpszClassName = cls;
+        RegisterClassExW(&wc);   // fails harmlessly when already registered
+        parent = CreateWindowExW(0, cls, L"", WS_CHILD | WS_VISIBLE, 0, 0, 100, 80,
+                                 parent, nullptr, wc.hInstance, nullptr);
+    }
+    return parent;
+}
+
 static void GhostEngineTests()
 {
     std::printf("GhostEngine tests\n");
@@ -695,9 +766,9 @@ static void GhostEngineTests()
     Check(t.count(ad) && t.count(ghost) && t.at(ad).disableKey() == t.at(ghost).disableKey() &&
           t.at(ad).disableKey().find(L'|') == std::wstring::npos && t.at(ad).disableKey() != L"?",
           "windows are switched off per program, AnyDesk windows and ghosts alike");
-    Check(t.count(ad) && eng.trackAnyDesk(ad) == &t.at(ad), "trackAnyDesk finds the tracked window");
-    Check(eng.trackAnyDesk(ghost) == nullptr, "a ghost is not an AnyDesk window");
-    Check(eng.trackAnyDesk(host) == nullptr, "an ordinary window is not tracked");
+    Check(t.count(ad) && eng.trackCursorWindow(ad) == &t.at(ad), "trackCursorWindow finds the tracked window");
+    Check(eng.trackCursorWindow(ghost) == nullptr, "a ghost is not an AnyDesk window");
+    Check(eng.trackCursorWindow(host) == nullptr, "an ordinary window is not tracked");
 
     // Hidden (the app minimized): stays listed, marked, and comes back unmarked.
     // WhatsApp does not only hide its ghost when minimized, it also parks it at
@@ -717,7 +788,41 @@ static void GhostEngineTests()
     // The cursor can reach a new AnyDesk window before any of its events do.
     HWND ad2 = MakeTopLevel(L"ad_win#9", L"987 654 321 - AnyDesk", 0);
     ShowWindow(ad2, SW_SHOWNA);
-    Check(eng.trackAnyDesk(ad2) != nullptr && t.count(ad2), "trackAnyDesk picks up a new AnyDesk window");
+    Check(eng.trackCursorWindow(ad2) != nullptr && t.count(ad2), "trackCursorWindow picks up a new AnyDesk window");
+
+    // A program hosting the RDP control: listed is its top-level window. mstsc
+    // creates the control while its window is still hidden.
+    HWND rdp = MakeTopLevel(L"DeGhosterTest_RdpHost", L"server - Remote Desktop Connection", 0);
+    HWND rdpMain = MakeChain(rdp, { L"UIMainClass" });
+    HWND ih = MakeChain(rdpMain, { L"UIContainerClass", L"IHWindowClass" });
+    Check(CursorOverlay::IsRdpInputWindow(ih), "the live chain is an RDP input window");
+    Check(!CursorOverlay::IsRdpInputWindow(rdpMain), "its main window is not");
+    Check(eng.trackCursorWindow(rdp) == nullptr && !t.count(rdp), "a hidden RDP host is not listed");
+    ShowWindow(rdp, SW_SHOWNA);
+    const FixInfo* fr = eng.trackCursorWindow(rdp);
+    Check(fr && fr->kind == FixInfo::Kind::Rdp && t.count(rdp), "a shown RDP host is listed as a case of its own");
+    Check(!t.count(ih) && !t.count(rdpMain), "the host window is listed, not the control's windows");
+    Check(t.count(rdp) && t.count(ad2) && t.at(rdp).disableKey() == t.at(ad2).disableKey(),
+          "an RDP window is switched per program like every other case");
+
+    // The same classes in a wrong chain are no RDP control.
+    HWND bad1 = MakeTopLevel(L"DeGhosterTest_RdpBad1", L"bad 1", 0);
+    MakeChain(bad1, { L"UIContainerClass", L"UIMainClass", L"IHWindowClass" });
+    HWND bad2 = MakeTopLevel(L"DeGhosterTest_RdpBad2", L"bad 2", 0);
+    MakeChain(bad2, { L"UIMainClass", L"IHWindowClass" });
+    ShowWindow(bad1, SW_SHOWNA);
+    ShowWindow(bad2, SW_SHOWNA);
+    Check(eng.trackCursorWindow(bad1) == nullptr, "the parents in another order are no RDP control");
+    Check(eng.trackCursorWindow(bad2) == nullptr, "an input window without its container is no RDP control");
+
+    // A connection manager closing its last session keeps its window, which is
+    // then no RDP window any more.
+    DestroyWindow(rdpMain);
+    eng.tick();
+    Check(!t.count(rdp), "an RDP host without a control leaves the list");
+    DestroyWindow(rdp);
+    DestroyWindow(bad1);
+    DestroyWindow(bad2);
 
     // Gone, or no longer a ghost: dropped.
     DestroyWindow(ad);
@@ -726,6 +831,29 @@ static void GhostEngineTests()
     SetLayeredWindowAttributes(ghost, 0, 255, LWA_ALPHA);
     eng.tick();
     Check(!t.count(ghost), "a window that stops being a ghost leaves the list");
+
+    // A ghost that is already cloaked (by someone else) is not one to fix.
+    HWND hidden = MakeTopLevel(L"Chrome_WidgetWin_1", L"DeGhoster-CloakedGhost", WS_EX_LAYERED);
+    SetLayeredWindowAttributes(hidden, 0, 0, LWA_ALPHA);
+    ShowWindow(hidden, SW_SHOWNA);
+    BOOL cloak = TRUE;
+    DwmSetWindowAttribute(hidden, DWMWA_CLOAK, &cloak, sizeof(cloak));
+    eng.tick();
+    Check(!t.count(hidden), "an already cloaked window is not listed");
+
+    // Late hook replies. A "cloaked" for a window that is no longer tracked but
+    // still alive is taken back; an "uncloaked" for a tracked window that is
+    // gone drops it from the list.
+    const int before = l.changes;
+    eng.onCloaked(hidden);
+    Check(!t.count(hidden), "a late cloak reply does not track the window");
+    HWND gone = MakeTopLevel(L"ad_win#9", L"555 - AnyDesk", 0);
+    ShowWindow(gone, SW_SHOWNA);
+    Check(eng.trackCursorWindow(gone) != nullptr, "a further AnyDesk window is tracked");
+    DestroyWindow(gone);   // no tick in between: still listed
+    eng.onUncloaked(gone);
+    Check(!t.count(gone) && l.changes > before, "an uncloak reply for a destroyed window drops it");
+    DestroyWindow(hidden);
 
     eng.stop(500);
     DestroyWindow(ad2);
@@ -759,20 +887,223 @@ static void CursorOverlayTests()
         Check((ex & need) == need, "the overlay is layered, click-through, topmost, no-activate, tool window");
         Check(SendMessageW(w, WM_NCHITTEST, 0, 0) == HTTRANSPARENT, "the overlay never takes a hit test");
         Check(SendMessageW(w, WM_MOUSEACTIVATE, 0, 0) == MA_NOACTIVATE, "the overlay never activates");
+        DWORD affinity = 0xFF;
+        Check(GetWindowDisplayAffinity(w, &affinity) && affinity == WDA_NONE,
+              "the overlay is captured normally while it shows nothing inverting");
     }
-    // The cursor is not over an AnyDesk window here, so it must stay hidden.
+    Check(ov.invertsForReal(), "this Windows lets the overlay invert for real");
+    SendMessageW(w, WM_TIMER, 1, 0);   // a refresh tick with nothing shown stops itself
+    // The cursor is not over a session window here, so it must stay hidden -
+    // unless the developer's own AnyDesk or RDP session happens to be under it.
     ov.setZoom(300);
     ov.setEnabled(true);
     Pump();
-    Check(!ov.visible(), "enabled but not over AnyDesk: hidden");
+    POINT pt{};
+    GetCursorPos(&pt);
+    HWND under = WindowFromPoint(pt);
+    wchar_t rootCls[64] = L"";
+    if (under) GetClassNameW(GetAncestor(under, GA_ROOT), rootCls, 64);
+    if (!CursorOverlay::IsRdpInputWindow(under) && !CursorOverlay::IsAnyDeskClass(rootCls))
+        Check(!ov.visible(), "enabled but not over a session: hidden");
     ov.setSessionLocked(true);
     Check(!ov.visible(), "locked: hidden");
     ov.setSessionLocked(false);
     ov.setEnabled(false);
     Check(!ov.visible(), "disabled: hidden");
+    ov.refresh();   // a window switched while the overlay is off
+    Check(!ov.visible(), "a refresh while disabled keeps it hidden");
     ov.destroy();
     ov.destroy();   // idempotent
     Check(FindOwnWindow(L"DeGhosterCursorOverlay") == nullptr, "destroy removes the window");
+}
+
+// ---- PopupMenu: driven from inside its own modal loop -----------------------
+
+static LRESULT CALLBACK MenuOwnerProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+    LRESULT r = 0;
+    if (PopupMenu::OwnerMessage(msg, wp, lp, r)) return r;
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static HWND MakeMenuOwner()
+{
+    WNDCLASSEXW wc{ sizeof(wc) };
+    wc.lpfnWndProc = MenuOwnerProc;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"DeGhosterTestMenuOwner";
+    RegisterClassExW(&wc);   // fails harmlessly when already registered
+    return CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"", WS_POPUP, 0, 0, 1, 1,
+                           nullptr, nullptr, wc.hInstance, nullptr);
+}
+
+// This thread's open menu window.
+static HWND OpenMenuWindow()
+{
+    for (HWND h = FindWindowExW(nullptr, nullptr, L"#32768", nullptr); h;
+         h = FindWindowExW(nullptr, h, L"#32768", nullptr))
+        if (IsWindowVisible(h) && GetWindowThreadProcessId(h, nullptr) == GetCurrentThreadId()) return h;
+    return nullptr;
+}
+
+// What the test does once the menu is open. A thread timer fires inside the
+// menu's modal loop; a second one ends the menu in any case, so a failed step
+// can never hang the test run.
+static std::function<void(HWND menuWnd, HMENU)> g_inMenu;
+static bool g_inMenuRan = false;
+
+static void CALLBACK InMenuTimer(HWND, UINT, UINT_PTR id, DWORD)
+{
+    HWND w = OpenMenuWindow();
+    if (!w) return;   // not shown yet: the next tick tries again
+    KillTimer(nullptr, id);
+    g_inMenuRan = true;
+    g_inMenu(w, (HMENU)SendMessageW(w, MN_GETHMENU, 0, 0));
+}
+
+static void CALLBACK MenuWatchdog(HWND, UINT, UINT_PTR id, DWORD)
+{
+    KillTimer(nullptr, id);
+    EndMenu();
+}
+
+static UINT TrackWith(PopupMenu& m, HWND owner, bool dark, const std::function<void(HWND, HMENU)>& inMenu,
+                      const std::function<void(UINT)>& onToggle)
+{
+    g_inMenu = inMenu;
+    g_inMenuRan = false;
+    const UINT_PTR t1 = SetTimer(nullptr, 0, 50, InMenuTimer);
+    const UINT_PTR t2 = SetTimer(nullptr, 0, 8000, MenuWatchdog);
+    const UINT cmd = m.track(owner, dark, POINT{ 120, 120 }, onToggle);
+    KillTimer(nullptr, t1);
+    KillTimer(nullptr, t2);
+    Pump();
+    return cmd;
+}
+
+constexpr UINT kMN_SELECTITEM = 0x01E5;   // highlights the item at wParam
+
+// Status (default) | Active (toggle) | --- | "Window & One" (literal toggle) |
+// (note) | --- | Settings | About | Quit
+enum : UINT { kStatus = 10, kActive = 11, kWindow = 12, kSettings = 13, kAbout = 14, kQuit = 15 };
+
+static void FillMenu(PopupMenu& m)
+{
+    m.addCommand(kStatus, L"Status", true);
+    m.addToggle(kActive, L"Active", true, false, L"Inactive");
+    m.addSeparator();
+    m.addToggle(kWindow, L"Window & One", true, true);
+    m.addNote(L"nothing here");
+    m.addSeparator();
+    m.addCommand(kSettings, L"Settings");
+    m.addCommand(kAbout, L"About");
+    m.addCommand(kQuit, L"Quit");
+}
+
+static WORD MenuChar(HMENU hm, wchar_t ch, WORD* pos = nullptr)
+{
+    LRESULT r = 0;
+    PopupMenu::OwnerMessage(WM_MENUCHAR, MAKEWPARAM(ch, MF_POPUP), (LPARAM)hm, r);
+    if (pos) *pos = LOWORD(r);
+    return HIWORD(r);
+}
+
+static void PopupMenuTests()
+{
+    std::printf("PopupMenu tests\n");
+    HWND owner = MakeMenuOwner();
+    LRESULT dummy = 0;
+    Check(!PopupMenu::OwnerMessage(WM_MENUCHAR, 'a', 0, dummy), "no open menu: the owner keeps its messages");
+
+    {   // The visual style in the light variant: paint, keys, toggles and a command.
+        PopupMenu m;
+        FillMenu(m);
+        std::vector<UINT> toggled;
+        bool painted = false, kept = false;
+        WORD quitAction = 0, quitPos = 0, toggleAction = 0, togglePos = 0, twoAction = 0, twoPos = 0;
+        WORD noneAction = 0, noteAction = 0;
+        WORD firstAction = 0, firstPos = 0;
+        const UINT cmd = TrackWith(m, owner, false, [&](HWND w, HMENU hm) {
+            painted = RedrawWindow(w, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW) != FALSE;
+            firstAction = MenuChar(hm, L's', &firstPos);   // nothing highlighted yet
+            SendMessageW(w, kMN_SELECTITEM, 1, 0);   // highlight "Active"
+            RedrawWindow(w, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+            // The fade-in animation renders the menu through WM_PRINT.
+            HDC screen = GetDC(nullptr);
+            HDC mem = CreateCompatibleDC(screen);
+            HBITMAP bmp = CreateCompatibleBitmap(screen, 400, 400);
+            HGDIOBJ old = SelectObject(mem, bmp);
+            SendMessageW(w, WM_PRINT, (WPARAM)mem, PRF_NONCLIENT | PRF_CLIENT | PRF_ERASEBKGND);
+            SelectObject(mem, old);
+            DeleteObject(bmp);
+            DeleteDC(mem);
+            ReleaseDC(nullptr, screen);
+
+            quitAction = MenuChar(hm, L'q', &quitPos);
+            toggleAction = MenuChar(hm, L'w', &togglePos);
+            twoAction = MenuChar(hm, L's', &twoPos);
+            noneAction = MenuChar(hm, L'z');
+            noteAction = MenuChar(hm, L'n');
+
+            // Enter on the highlighted toggle flips it and keeps the menu open;
+            // then "q" picks Quit, the only item starting with it.
+            PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0);
+            PostMessageW(w, WM_CHAR, L'q', 0);
+        }, [&](UINT id) {
+            toggled.push_back(id);
+            m.setToggle(kActive, false, L"Inactive");   // what the tray does: new state, new name
+            m.setToggle(kActive, false);                // no change at all
+            kept = OpenMenuWindow() != nullptr;
+        });
+        Check(g_inMenuRan, "the menu opened (light)");
+        Check(painted, "the light menu paints");
+        Check(firstAction == MNC_SELECT && firstPos == 0, "without a highlight the search starts at the top");
+        Check(quitAction == MNC_EXECUTE && quitPos == 8, "a letter of one command runs it");
+        Check(toggleAction == MNC_SELECT && togglePos == 3, "a letter of a toggle only selects it");
+        Check(twoAction == MNC_SELECT && twoPos == 6, "a letter of two items selects the next one after the highlight");
+        Check(noneAction == MNC_IGNORE, "a letter of no item is ignored");
+        Check(noteAction == MNC_IGNORE, "a note is never picked by its letter");
+        Check(toggled.size() == 1 && toggled[0] == kActive, "Enter on a toggle runs the toggle callback");
+        Check(kept, "the menu stays open while a toggle flips");
+        Check(cmd == kQuit, "the command chosen by its letter is returned");
+    }
+
+    {   // The dark variant (where Windows has dark menus), dismissed: returns 0.
+        PopupMenu m;
+        FillMenu(m);
+        bool painted = false;
+        const UINT cmd = TrackWith(m, owner, true, [&](HWND w, HMENU) {
+            SendMessageW(w, kMN_SELECTITEM, 4, 0);   // the note: a disabled, highlighted item
+            painted = RedrawWindow(w, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW) != FALSE;
+            EndMenu();
+        }, {});
+        Check(g_inMenuRan && painted, "the dark menu opens and paints");
+        Check(cmd == 0, "a dismissed menu returns no command");
+    }
+
+    {   // Visual styles off (for this owner): the classic menu in system colours.
+        HWND classic = MakeMenuOwner();
+        SetWindowTheme(classic, L" ", L" ");
+        HTHEME probe = OpenThemeDataForDpi(classic, L"Menu", 96);
+        if (Check(probe == nullptr, "an owner without visual styles gets no menu style")) {
+            PopupMenu m;
+            FillMenu(m);
+            bool painted = false;
+            const UINT cmd = TrackWith(m, classic, true, [&](HWND w, HMENU) {
+                for (int i : { 0, 1, 2, 4 }) {   // default, checked toggle, separator, disabled note
+                    SendMessageW(w, kMN_SELECTITEM, i, 0);
+                    painted = RedrawWindow(w, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW) != FALSE;
+                }
+                EndMenu();
+            }, {});
+            Check(g_inMenuRan && painted, "the classic menu opens and paints");
+            Check(cmd == 0, "the classic menu returns no command when dismissed");
+        }
+        if (probe) CloseThemeData(probe);
+        DestroyWindow(classic);
+    }
+
+    DestroyWindow(owner);
 }
 
 static int Cloaked(HWND h)
@@ -1084,10 +1415,12 @@ int main()
     ZoomTests();
     AutoZoomTests();
     AnyDeskClassTests();
+    RdpClassTests();
     CursorImageTests();
     ControlTests();
     SettingsWindowTests();
     CursorOverlayTests();
+    PopupMenuTests();
     GhostEngineTests();
     ThemeTests();
     ProcessUtilTests();

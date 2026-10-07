@@ -45,7 +45,11 @@ function Report([string]$what, [bool]$ok) {
     Write-Host ("  [$mark] $what") -ForegroundColor $(if ($ok) { 'Green' } else { 'Yellow' })
 }
 
-reg add "HKCU\Software\DeGhoster" /v GlobalEnabled /t REG_DWORD /d 1 /f | Out-Null
+# coverage-manual.ps1 points everything at a throwaway settings root; never touch
+# the user's own HKCU\Software\DeGhoster from here.
+$settingsRoot = $env:DEGHOSTER_SETTINGS_ROOT
+if (-not $settingsRoot) { throw "DEGHOSTER_SETTINGS_ROOT is not set - run tests\coverage-manual.ps1, not this script." }
+reg add "HKCU\$settingsRoot" /v GlobalEnabled /t REG_DWORD /d 1 /f | Out-Null
 
 $t64 = "DGHMAN64-$PID"
 $t32 = "DGHMAN32-$PID"

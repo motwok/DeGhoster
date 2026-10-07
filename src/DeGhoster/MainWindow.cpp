@@ -23,6 +23,7 @@
 #include "HoverButton.h"
 #include "InfoWindow.h"
 #include "Loc.h"
+#include "PopupMenu.h"
 #include "ProcessUtil.h"
 #include "resource.h"
 #include "Hook.h"   // WM_DGH_CLOAKED / WM_DGH_UNCLOAKED
@@ -202,13 +203,13 @@ bool MainWindow::create(HINSTANCE inst, bool startHidden)
     // Backstop for cloak/uncloak requests the hook never answers: drop them so a
     // window can't stay stuck in "pending" forever.
     SetTimer(h, kPendingTimer, 1000, nullptr);
-    // The AnyDesk cursor overlay: its own window and WinEvent subscription, and
+    // The remote cursor overlay: its own window and WinEvent subscription, and
     // lock/unlock notifications so the real cursor is restored on the lock screen.
-    // Each AnyDesk window is a listed case with its own eye, like a ghost; the
-    // overlay only enlarges the cursor over the windows that are switched on.
+    // Each AnyDesk and RDP window is a listed case with its own eye, like a ghost;
+    // the overlay only enlarges the cursor over the windows that are switched on.
     overlay_.create(inst);
     overlay_.setWindowFilter([this](HWND root) {
-        const FixInfo* fi = engine_.trackAnyDesk(root);
+        const FixInfo* fi = engine_.trackCursorWindow(root);
         return fi && settings_.isManaged(fi->disableKey());
     });
     applyCursorOverlay();
@@ -494,7 +495,7 @@ void MainWindow::toggleWindow(HWND ghost)
     std::wstring key = it->second.disableKey();
     settings_.setManaged(key, !settings_.isManaged(key));
     engine_.refreshAll();
-    overlay_.refresh();   // an AnyDesk window switched under the cursor
+    overlay_.refresh();   // a session window switched under the cursor
     InvalidateRect(list_, nullptr, FALSE);
 }
 
@@ -552,49 +553,56 @@ void MainWindow::warnHooksMissing()
 void MainWindow::showTrayMenu()
 {
     POINT pt; GetCursorPos(&pt);
-    HMENU m = CreatePopupMenu();
-    AppendMenuW(m, MF_STRING, IDM_SHOW, loc::t(IDS_MENU_STATUS));
-    SetMenuDefaultItem(m, IDM_SHOW, FALSE);
+    PopupMenu m;
+    m.addCommand(IDM_SHOW, loc::t(IDS_MENU_STATUS), true);
     bool on = settings_.globalEnabled();
-    AppendMenuW(m, MF_STRING | (on ? MF_CHECKED : 0), IDM_ACTIVE,
-                loc::t(on ? IDS_MENU_ACTIVE : IDS_MENU_INACTIVE));
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    m.addToggle(IDM_ACTIVE, loc::t(on ? IDS_MENU_ACTIVE : IDS_MENU_INACTIVE), on, false,
+                loc::t(on ? IDS_MENU_INACTIVE : IDS_MENU_ACTIVE));
+    m.addSeparator();
 
     menuWindows_.clear();
     if (engine_.tracked().empty()) {
-        AppendMenuW(m, MF_STRING | MF_GRAYED, 0, loc::t(IDS_MENU_NOWINDOWS));
+        m.addNote(loc::t(IDS_MENU_NOWINDOWS));
     } else {
         for (auto& r : sortedRows()) {
             UINT id = IDM_WIN_BASE + (UINT)menuWindows_.size();
             menuWindows_.push_back(r.second);
             bool managed = settings_.isManaged(engine_.tracked().at(r.second).disableKey());
-            AppendMenuW(m, MF_STRING | (managed ? MF_CHECKED : 0), id, r.first.c_str());
+            m.addToggle(id, r.first, managed, true);
         }
     }
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, IDM_SETTINGS, loc::t(IDS_MENU_SETTINGS));
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, IDM_INFO, loc::t(IDS_MENU_INFO));
-    AppendMenuW(m, MF_STRING, IDM_QUIT, loc::t(IDS_MENU_QUIT));
+    m.addSeparator();
+    m.addCommand(IDM_SETTINGS, loc::t(IDS_MENU_SETTINGS));
+    m.addSeparator();
+    m.addCommand(IDM_INFO, loc::t(IDS_MENU_INFO));
+    m.addCommand(IDM_QUIT, loc::t(IDS_MENU_QUIT));
 
-    SetForegroundWindow(hwnd_);
-    int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd_, nullptr);
-    PostMessageW(hwnd_, WM_NULL, 0, 0);   // KB135788: let the menu dismiss on click-away
-    DestroyMenu(m);
+    // Toggles run while the menu stays open. The windows of one program share
+    // their switch, so every window entry is re-read after each flip.
+    UINT cmd = m.track(hwnd_, theme_.dark, pt, [&](UINT id) {
+        if (id == IDM_ACTIVE) setGlobalEnabled(!settings_.globalEnabled());
+        else if (id >= IDM_WIN_BASE && id - IDM_WIN_BASE < menuWindows_.size())
+            toggleWindow(menuWindows_[id - IDM_WIN_BASE]);
+        const bool active = settings_.globalEnabled();
+        m.setToggle(IDM_ACTIVE, active, loc::t(active ? IDS_MENU_ACTIVE : IDS_MENU_INACTIVE));
+        for (size_t i = 0; i < menuWindows_.size(); ++i) {
+            auto it = engine_.tracked().find(menuWindows_[i]);
+            if (it != engine_.tracked().end())
+                m.setToggle(IDM_WIN_BASE + (UINT)i, settings_.isManaged(it->second.disableKey()));
+        }
+    });
 
     if (cmd == IDM_SHOW) showWindow();
-    else if (cmd == IDM_ACTIVE) setGlobalEnabled(!on);
     else if (cmd == IDM_INFO) InfoWindow::Show(inst_, hwnd_, theme_, dpi_);
     else if (cmd == IDM_SETTINGS) showSettings();
     else if (cmd == IDM_QUIT) { reallyExit_ = true; DestroyWindow(hwnd_); }
-    else if (cmd >= IDM_WIN_BASE) {
-        size_t i = cmd - IDM_WIN_BASE;
-        if (i < menuWindows_.size()) toggleWindow(menuWindows_[i]);
-    }
 }
 
 LRESULT MainWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
 {
+    LRESULT menuResult = 0;
+    if (PopupMenu::OwnerMessage(msg, wp, lp, menuResult)) return menuResult;
+
     switch (msg) {
     case WM_CREATE: onCreate(); return 0;
     case WM_SIZE: layout(); return 0;

@@ -43,6 +43,8 @@ The second case added this way is the **tiny AnyDesk remote cursor** on high-DPI
 clients (section 10). It is detected precisely (only over an AnyDesk session window
 showing AnyDesk's own cursor) and is reversible (nothing in AnyDesk, the remote
 machine or Windows is changed; switching it off removes every effect at once).
+The same overlay also enlarges the remote cursor of **Remote Desktop (RDP) sessions**
+(section 10.9), detected just as precisely by the window classes of the RDP control.
 
 ## 2. Ghost-window definition
 
@@ -91,14 +93,14 @@ again. This was confirmed against a real WhatsApp ghost, and a plain
 
 | Set | Meaning |
 |---|---|
-| tracked | every live window of every case currently listed: ghosts and AnyDesk session windows (section 10) |
+| tracked | every live window of every case currently listed: ghosts, AnyDesk session windows and RDP windows (section 10) |
 | cloaked | tracked ghosts currently neutralized by us |
 | disabled | per-program opt-out, keyed by the window's program (section 5), for every case alike |
 | global enabled | master switch |
 
 **Reconcile rule** per window: act ⇔ `globalEnabled && managed && windowAlive`, where
-`managed = key ∉ disabled`. For a ghost, acting means cloaking it; for an AnyDesk
-window it means enlarging its remote cursor.
+`managed = key ∉ disabled`. For a ghost, acting means cloaking it; for an AnyDesk or
+RDP window it means enlarging its remote cursor.
 
 - **Global off** disables only the *action*. Detection keeps running and the list
   stays; entries vanish only when the window closes.
@@ -115,7 +117,7 @@ window it means enlarging its remote cursor.
 ## 5. Persistence
 
 Choices survive restarts, per user (`HKCU`): the master switch, the set of
-per-program opt-outs and the AnyDesk cursor zoom (section 10.7). See
+per-program opt-outs and the remote cursor zoom (section 10.7). See
 [Architecture.md](Architecture.md#persistence-registry) for the exact keys.
 
 A program is identified so that its updates keep the opt-out:
@@ -145,9 +147,15 @@ so sign-in is unobtrusive; the same switch works when launching the app directly
 
 - **Tray app.** Left/right click opens the context menu; double-click opens the
   status window (the bold "Status Window" entry = default action).
-- **Menu:** status window · Active/Inactive · one entry per detected window (ghosts
-  and AnyDesk windows; toggles it) · Settings… · Info · Quit. The window entries are
+- **Menu:** status window · Active/Inactive · one entry per detected window (ghosts,
+  AnyDesk and RDP windows; toggles it) · Settings… · Info · Quit. The window entries are
   in the same order as the status list.
+- **Menu look and behaviour:** owner-drawn in the Windows menu style — the dark
+  variant in dark mode, the plain style under high contrast, system colours without
+  visual styles — with the system menu font and metrics at the DPI of the monitor it
+  opens on, so it matches a native menu. Active/Inactive and the window entries are
+  toggles: clicking one (or Enter) switches it in place and the menu **stays open**.
+  It closes when a command is chosen, on Esc, or when it loses the focus.
 - **Status window:** title `DeGhoster — N Ghosts`; a list of detected windows
   (`Title (exe)`, sorted by that label; hidden ghosts greyed out), each with a
   **eye switch** (it switches the window's program, section 4) shown the same way as the
@@ -225,7 +233,7 @@ flowchart LR
     E[Cursor event<br/>move / shape / show / hide] --> C{Over an AnyDesk window<br/>that is switched on,<br/>non-system cursor?}
     C -- no --> H[Hide overlay<br/>show system cursor]
     C -- yes --> R{Cursor handle, zoom<br/>or DPI changed?}
-    R -- yes --> B[Read cursor image<br/>outline · scale] --> U[UpdateLayeredWindow]
+    R -- yes --> B[Read cursor image<br/>scale] --> U[UpdateLayeredWindow]
     R -- no --> M[Move overlay only]
     U --> S[Show without activation<br/>hide system cursor]
     M --> S
@@ -253,7 +261,8 @@ otherwise it is hidden:
    the window class **`ad_win`**. AnyDesk appends a running number to its class
    names (`ad_win#2`), so the name is compared up to the first `#`. Matching the
    class instead of the image name `AnyDesk.exe` also covers renamed and
-   custom-branded AnyDesk clients.
+   custom-branded AnyDesk clients. **Or** the window under the cursor is the input
+   window of an RDP control (section 10.9).
 4. The cursor handle is **not** a system cursor (the set of `LoadCursor(NULL,
    IDC_*)` handles for all standard IDs). This keeps the overlay away from AnyDesk's
    own title bar, tabs, menus and settings pages, which use system cursors.
@@ -263,16 +272,29 @@ otherwise it is hidden:
 pixels are read as top-down 32-bit BGRA with `GetDIBits`:
 
 - *Colour with alpha* (any alpha ≠ 0): used as is.
-- *Colour without alpha*: AND 0 → opaque; AND 1 with a non-black colour → inverting;
-  otherwise transparent.
+- *Colour without alpha*: AND 0 → opaque; AND 1 with a non-black colour → the
+  screen XOR that colour (*inverting*); otherwise transparent.
 - *Monochrome* (no colour bitmap; the mask is double height, AND above XOR):
-  AND 0 → black or white by XOR, opaque; AND 1 & XOR 1 → inverting; AND 1 & XOR 0 →
-  transparent.
-- An overlay cannot invert the screen, so *inverting* pixels are drawn opaque black
-  with a **white outline**: every transparent pixel within radius
-  `r = max(1, round(DPI/96 × 0.8))` (DPI of the monitor under the cursor) of an
-  inverting pixel becomes opaque white. Without it an inverting I-beam is invisible
-  on dark backgrounds.
+  AND 0 → black or white by XOR, opaque; AND 1 & XOR 1 → the screen inverted;
+  AND 1 & XOR 0 → transparent.
+- *Inverting* pixels **really invert** what is under them, as Windows does for its
+  own cursor: a layered window cannot XOR the screen, so the overlay reads the
+  screen under the cursor (`BitBlt` from the screen) and shows it XOR the pixel's
+  colour. They go into a second window directly above the overlay, colour-keyed
+  (`LWA_COLORKEY`, magenta; a result of exactly that colour is nudged by one step),
+  which is left out of screen captures (`WDA_EXCLUDEFROMCAPTURE`), so reading the
+  screen never reads the inverted picture itself; in the overlay those pixels are
+  transparent. (Only a colour-keyed window can be left out of captures, not the
+  per-pixel-alpha overlay; inverting pixels need no partial alpha.) They are
+  recomposed on every cursor event and, while such a cursor is shown, every 50 ms,
+  so the picture follows what changes under a resting mouse (text typed under the
+  I-beam). Scaled, they stay crisp: a pixel inverts when inverting pixels cover at
+  least half of it.
+- Where Windows cannot leave a window out of captures (before Windows 10 2004),
+  inverting pixels are drawn opaque black with a **white outline** instead: every
+  transparent pixel within radius `r = max(1, round(DPI/96 × 0.8))` (DPI of the
+  monitor under the cursor) of an inverting pixel becomes opaque white, so an
+  inverting I-beam stays visible on dark backgrounds.
 
 **Zoom — Auto (default).** Per AnyDesk window, DeGhoster measures how long each
 remote cursor picture was on screen during the **last 10 seconds** (told apart by its
@@ -325,13 +347,15 @@ handling `SHOW`, `HIDE`, `LOCATIONCHANGE` and `NAMECHANGE` with `idObject ==
 OBJID_CURSOR`. Location changes deliver movement, name changes shape changes. On each
 event the current position and cursor are read (`GetCursorPos`, `GetCursorInfo`),
 because events are asynchronous and coalesced. Rendering stays cheap on this path.
+The one timer is the 50 ms refresh of inverting pixels, and it runs only while a
+cursor with inverting pixels is shown over a session window.
 
 ### 10.5 Lifecycle
 
 The overlay is hidden and the cursor restored immediately when the AnyDesk window or
 the global switch is turned off, the cursor leaves AnyDesk, AnyDesk ends, the session is
 locked or DeGhoster shuts down (`--quit`, end-session). *z* does not depend on the
-monitor DPI; only the outline radius does. With no AnyDesk running, the cost is the
+monitor DPI; only the fallback outline radius does. With no AnyDesk running, the cost is the
 event subscription alone.
 
 ### 10.6 Settings window
@@ -346,11 +370,11 @@ it; `Tab`/`Shift+Tab` move through the controls with a visible focus indicator;
 further settings can be added later. It holds no on/off switch for a case: those are
 the per-window eyes and the global power button.
 
-Section **AnyDesk cursor**:
+Section **Remote cursor** (AnyDesk and RDP alike):
 
 | Control | Behaviour |
 |---|---|
-| **Automatic size (as large as the local pointer)** (on/off switch, on by default) | Auto zoom per AnyDesk window (10.4). |
+| **Automatic size (as large as the local pointer)** (on/off switch, on by default) | Auto zoom per session window (10.4). |
 | **Zoom** slider with value label ("250 %") | The fixed zoom: 100 … 600 %, step 10 %; arrows ±10 %, PgUp/PgDn ±50 %, Home/End = limits; applies live; greyed out while Auto is on. |
 | Hint | Enlarging the pointer on the remote computer gives a sharper cursor. |
 
@@ -365,7 +389,8 @@ Under `HKCU\Software\DeGhoster` (honouring `DEGHOSTER_SETTINGS_ROOT`):
 | `CursorOverlayAuto` | DWORD | automatic zoom 0/1 | 1 |
 | `CursorOverlayZoom` | DWORD | fixed zoom in percent, 100 … 600 | primary monitor scaling |
 
-Switched-off AnyDesk windows are stored like switched-off ghosts, under `Disabled`.
+Switched-off AnyDesk and RDP windows are stored like switched-off ghosts, under
+`Disabled`.
 
 No files on disk; no registry writes outside DeGhoster's own key; no change to cursor
 schemes, no `SetSystemCursor`.
@@ -381,3 +406,63 @@ schemes, no `SetSystemCursor`.
 5. Switching a window or DeGhoster off removes all visible effects immediately;
    nothing remains in the system besides DeGhoster's own registry values.
 6. Every AnyDesk window is listed, counted and switched on and off on its own.
+7. In an RDP session the same holds; the overlay never appears over the host
+   program's own UI (connection bar, toolbars, tree views), and AnyDesk and RDP
+   windows are switched independently of each other.
+
+### 10.9 Remote Desktop (RDP) sessions
+
+**Why.** RDP does not shrink the remote cursor the way AnyDesk does: it shows the
+remote computer's own pointer at the size the *remote* computer is set to. On a
+high-DPI client (3840×2160 at 250 %) that is still tiny, because the remote usually
+runs at 100 %: a Windows arrow arrives as a 25×38 px picture next to a local arrow of
+60×93 px. It can be fixed on the remote by enlarging its pointer, but that has to be
+set up on every single remote computer and session host, again and again. DeGhoster
+enlarges it once, on the client, for every session — the same way as for AnyDesk.
+
+**Detection.** The Microsoft RDP control (`mstscax.dll`, and its fork
+`rdclientax.dll`) creates a fixed hierarchy inside whatever program hosts it:
+
+```mermaid
+flowchart TD
+    Host["host top-level window<br/>e.g. TscShellContainerClass (mstsc, msrdc)"] --> Ax["ActiveX host windows<br/>e.g. TscShellAxHostClass, ATL:..."]
+    Ax --> Main[UIMainClass]
+    Main --> Cont[UIContainerClass]
+    Cont --> IH["IHWindowClass<br/>Input Capture Window: mouse, keyboard, cursor"]
+    Cont --> OP["OPContainerClass<br/>Output Painter Window: remote image"]
+```
+
+The input window receives the mouse and sets the remote cursor, a non-system Win32
+cursor as with AnyDesk (an animated remote cursor arrives as one cursor handle per
+frame). Activation step 3 accepts the window under the cursor (`WindowFromPoint`) when
+its class is **`IHWindowClass`**, its parent's **`UIContainerClass`** and its
+grandparent's **`UIMainClass`** — exact, case-sensitive, regardless of the host
+program. That needs only the class names, no process access, and is independent of
+the host's bitness. It covers every program that embeds the control, for example:
+
+| Program | Host executable | Control | Verified |
+|---|---|---|---|
+| Remote Desktop Connection | `mstsc.exe` | `mstscax.dll` | yes |
+| WSLg (graphical Linux apps under WSL) | `msrdc.exe` (in `C:\Program Files\WSL`) | `rdclientax.dll` | yes |
+| Hyper-V Virtual Machine Connection | `vmconnect.exe` | `mstscax.dll` | no |
+| Remote Desktop Connection Manager (Sysinternals) | `RDCMan.exe` | `mstscax.dll` | no |
+| mRemoteNG | `mRemoteNG.exe` | `mstscax.dll` | no |
+
+"Verified" means tested against the real program; the others embed the same control
+and are expected to work unchanged. Clients with their own RDP implementation (e.g.
+FreeRDP-based ones) are not covered.
+
+**RDP windows are cases like AnyDesk windows.** Listed is the **visible top-level
+window** of the program hosting a control (for mstsc the session window, titled
+`server - Remote Desktop Connection`): its own row with the eye, its own tray entry,
+counted in the title, switched off per program. It is picked up when the control's
+input window is created inside a visible window, when a window with a control is
+shown (mstsc creates the control while its window is still hidden behind the
+connection dialog, which is therefore not listed), at startup, and when the cursor
+reaches it first. It leaves the list when it is destroyed or no longer holds a control
+(a connection manager whose last session was closed). AnyDesk and RDP windows belong
+to different programs, so switching one off never touches the other.
+
+Everything else — zoom (Auto per window, or the fixed zoom), reading and scaling the
+cursor image, the overlay window, hiding the original cursor, events, lifecycle and
+settings — is the same as for AnyDesk; there is no separate setting.

@@ -76,6 +76,32 @@ bool IsAnyDeskWindow(HWND h)
     return GetClassNameW(h, cls, 64) && CursorOverlay::IsAnyDeskClass(cls);
 }
 
+// True if an RDP control's input window lives anywhere below `top`.
+bool HasRdpInput(HWND top)
+{
+    bool found = false;
+    EnumChildWindows(top, [](HWND h, LPARAM lp) -> BOOL {
+        if (!CursorOverlay::IsRdpInputWindow(h)) return TRUE;
+        *reinterpret_cast<bool*>(lp) = true;
+        return FALSE;
+    }, (LPARAM)&found);
+    return found;
+}
+
+// The third case: the visible top-level window of a program that hosts the RDP
+// control. `h` is either the control's input window itself (it is being created,
+// or the cursor is over it) or, with `deep`, a top-level window to search.
+// Nothing is injected into it either. Null if `h` leads to no such window.
+HWND RdpWindow(HWND h, bool deep)
+{
+    if (CursorOverlay::IsRdpInputWindow(h)) {
+        HWND root = GetAncestor(h, GA_ROOT);
+        return root && IsWindowVisible(root) ? root : nullptr;
+    }
+    if (deep && IsWindowVisible(h) && GetAncestor(h, GA_ROOT) == h && HasRdpInput(h)) return h;
+    return nullptr;
+}
+
 // A cloak/uncloak request whose reply never arrives (dead hook, hung thread, a
 // window that stopped qualifying) is dropped after this long, so pending_ can
 // never block a window's reconcile permanently.
@@ -111,7 +137,7 @@ void GhostEngine::start(HWND host)
     s_instance = this;
     hooksLoaded_ = hooks_.load(proc::ExeDir());
 
-    EnumWindows([](HWND h, LPARAM) -> BOOL { s_instance->handleCandidate(h); return TRUE; }, 0);
+    EnumWindows([](HWND h, LPARAM) -> BOOL { s_instance->handleCandidate(h, /*deep*/ true); return TRUE; }, 0);
 
     // CREATE..HIDE: HIDE only updates the "hidden" mark of a tracked window.
     we1_ = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE, nullptr, winEventThunk,
@@ -177,7 +203,10 @@ void GhostEngine::onWinEvent(DWORD event, HWND hwnd)
         if (event == EVENT_OBJECT_SHOW || event == EVENT_OBJECT_HIDE) updateHidden(hwnd);
         return;
     }
-    handleCandidate(hwnd);
+    // An RDP host creates the control while still hidden (mstsc does so behind its
+    // connection dialog), so its input window's CREATE finds no visible window
+    // yet; the host showing its window is when to look inside it.
+    handleCandidate(hwnd, /*deep*/ event == EVENT_OBJECT_SHOW);
 }
 
 void GhostEngine::updateHidden(HWND h)
@@ -190,14 +219,15 @@ void GhostEngine::updateHidden(HWND h)
     if (listener_) listener_->onTrackedChanged();
 }
 
-const FixInfo* GhostEngine::trackAnyDesk(HWND h)
+const FixInfo* GhostEngine::trackCursorWindow(HWND h)
 {
     auto it = tracked_.find(h);
     if (it == tracked_.end()) {
-        handleCandidate(h);   // the cursor can reach a new window before its events do
+        // The cursor can reach a new window before its events do.
+        handleCandidate(h, /*deep*/ true);
         it = tracked_.find(h);
     }
-    return it != tracked_.end() && it->second.kind == FixInfo::Kind::AnyDesk ? &it->second : nullptr;
+    return it != tracked_.end() && it->second.kind != FixInfo::Kind::Ghost ? &it->second : nullptr;
 }
 
 bool GhostEngine::isBadPid(DWORD pid)
@@ -211,12 +241,18 @@ bool GhostEngine::isBadPid(DWORD pid)
     return true;
 }
 
-void GhostEngine::handleCandidate(HWND h)
+void GhostEngine::handleCandidate(HWND h, bool deep)
 {
     if (tracked_.count(h)) return;
     FixInfo fi;
     if (IsBlocker(h)) fi.kind = FixInfo::Kind::Ghost;
     else if (IsAnyDeskWindow(h)) fi.kind = FixInfo::Kind::AnyDesk;
+    else if (HWND rdp = RdpWindow(h, deep)) {
+        // Listed is the host's top-level window, not the control's input window.
+        h = rdp;
+        if (tracked_.count(h)) return;
+        fi.kind = FixInfo::Kind::Rdp;
+    }
     else return;
 
     DWORD pid = 0, tid = GetWindowThreadProcessId(h, &pid);
@@ -238,7 +274,7 @@ bool GhostEngine::desiredCloaked(const FixInfo& fi, HWND h) const
 void GhostEngine::reconcile(HWND h)
 {
     auto it = tracked_.find(h);
-    // AnyDesk windows are never touched; the overlay asks for their state itself.
+    // AnyDesk and RDP windows are never touched; the overlay asks for their state itself.
     if (it == tracked_.end() || it->second.kind != FixInfo::Kind::Ghost) return;
 
     bool desired = desiredCloaked(it->second, h);
@@ -298,12 +334,16 @@ void GhostEngine::tick()
     // stay tracked and cloaked forever. No win-event covers those changes, which is
     // why this is a sweep rather than an event handler.
     // Visibility is not part of it: a ghost its app hid stays listed (marked
-    // hidden) until it is destroyed. An AnyDesk window only ends by going away.
+    // hidden) until it is destroyed. An AnyDesk window only ends by going away; an
+    // RDP window also when its program closes the last RDP control in it (a
+    // connection manager whose sessions are all closed).
     std::vector<HWND> stale, idle, live;
     for (auto& kv : tracked_) {
         HWND h = kv.first;
         const bool ghost = kv.second.kind == FixInfo::Kind::Ghost;
-        if (!IsWindow(h) || (ghost && !IsBlocker(h, /*ignoreCloak*/ true, /*ignoreVisible*/ true))) {
+        const bool rdp = kv.second.kind == FixInfo::Kind::Rdp;
+        if (!IsWindow(h) || (ghost && !IsBlocker(h, /*ignoreCloak*/ true, /*ignoreVisible*/ true)) ||
+            (rdp && !HasRdpInput(h))) {
             stale.push_back(h);
             continue;
         }

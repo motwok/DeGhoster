@@ -10,9 +10,10 @@ DeGhoster is a native Win32 C++ application with no runtime dependencies
 ([ADR-0001](adr/0001-native-win32-cpp.md)). An x64 **host** does all detection, UI
 and orchestration; the actual neutralization runs **inside** each target process via
 an injected **hook DLL** ([ADR-0002](adr/0002-in-process-cloak-via-hook-dll.md)).
-The AnyDesk cursor overlay is the exception: it runs entirely in the host and
-touches AnyDesk only by reading its cursor
-([ADR-0012](adr/0012-anydesk-cursor-overlay.md), [below](#anydesk-cursor-overlay-adr-0012)).
+The remote cursor overlay is the exception: it runs entirely in the host and
+touches AnyDesk and RDP clients only by reading their cursor
+([ADR-0012](adr/0012-anydesk-cursor-overlay.md), [ADR-0013](adr/0013-rdp-detection-by-window-classes.md),
+[below](#remote-cursor-overlay-adr-0012-adr-0013)).
 
 ```mermaid
 flowchart TB
@@ -25,6 +26,7 @@ flowchart TB
     end
 
     AnyDesk["AnyDesk client (x86)<br/>session window ad_win"]
+    Rdp["RDP host (mstsc, msrdc, ...)<br/>RDP control, input window IHWindowClass"]
 
     Helper64["DeGhoster.Helper64.exe (x64)"]
     Helper32["DeGhoster.Helper32.exe (x86)"]
@@ -42,6 +44,7 @@ flowchart TB
     UI --- Engine
     UI --- Overlay
     AnyDesk -. "cursor events, cursor handle (read only)" .-> Overlay
+    Rdp -. "cursor events, cursor handle (read only)" .-> Overlay
     Engine --> Inj
     Inj == "DgInstallHook (direct)" ==> H64
     Inj == "launch" ==> Helper
@@ -74,10 +77,11 @@ with no shared mutable state beyond the win-event thunk's single-instance pointe
 | `InfoWindow` | dark-mode "About" popup (modeless, single-instance) |
 | `SettingsWindow` | settings window (modeless, single-instance), built in sections; applies and saves every change at once and tells the owner with `WM_SETTINGS_CHANGED` |
 | `Controls` | owner-drawn on/off switch and slider used by the settings window |
-| `AutoZoom` | automatic zoom of one AnyDesk window: on-screen time per cursor picture, reference picture, zoom |
-| `CursorOverlay` | AnyDesk cursor overlay: `OBJID_CURSOR` WinEvents, activation check (asks the per-window filter), overlay window, `MagShowSystemCursor` |
-| `CursorImage` | cursor handle → premultiplied ARGB + hotspot (all three cursor kinds), outline for inverting pixels, sharp-bilinear scaling, visible height and picture fingerprint |
-| `GhostEngine` | detection + cloak + reconcile core for every case (ghosts and AnyDesk windows), driven by `SetWinEventHook` |
+| `PopupMenu` | owner-drawn tray menu in the Windows menu style (its dark variant in dark mode, plain under high contrast), with the system menu font and metrics at the DPI of the monitor it opens on; toggle entries flip in place, so the menu stays open until a command is chosen or it loses the focus |
+| `AutoZoom` | automatic zoom of one session window: on-screen time per cursor picture, reference picture, zoom |
+| `CursorOverlay` | remote cursor overlay (AnyDesk, RDP): `OBJID_CURSOR` WinEvents, activation check (AnyDesk class, RDP class chain; asks the per-window filter), overlay window, `MagShowSystemCursor` |
+| `CursorImage` | cursor handle → premultiplied ARGB + hotspot + inverting (XOR) pixels (all three cursor kinds), XOR layer over the screen, fallback outline, sharp-bilinear scaling, visible height and picture fingerprint |
+| `GhostEngine` | detection + cloak + reconcile core for every case (ghosts, AnyDesk and RDP windows), driven by `SetWinEventHook` |
 | `HookInjector` | starts a helper of the target's bitness per target thread and tracks its lifetime |
 | `Autostart` | per-user HKCU `Run` register/unregister (installer hooks) |
 | `Settings` | registry persistence (global switch, per-program opt-outs and their migration from the old per-window keys, cursor overlay zoom) |
@@ -102,19 +106,29 @@ events — no polling.
 
 Only `idObject == OBJID_WINDOW`, `idChild == CHILDID_SELF` events are considered. A
 one-time `EnumWindows` scan on startup catches already-open windows. A candidate is
-tracked as one of two kinds (`FixInfo::Kind`):
+tracked as one of three kinds (`FixInfo::Kind`):
 
 - **Ghost** — the ghost criteria (including the `LWA_ALPHA` discriminator,
   [ADR-0004](adr/0004-lwa-alpha-ghost-discriminator.md)) are defined in
   [Specification.md](Specification.md#2-ghost-window-definition). Only ghosts are
   reconciled, i.e. cloaked through a hook.
 - **AnyDesk** — a visible top-level window of class `ad_win` (up to the first `#`).
-  Nothing is done to it; the cursor overlay asks the engine (`trackAnyDesk`) whether
-  the window under the cursor is tracked and switched on. `trackAnyDesk` also tracks a
-  window its events have not reported yet.
+  Nothing is done to it; the cursor overlay asks the engine (`trackCursorWindow`)
+  whether the window under the cursor is tracked and switched on. `trackCursorWindow`
+  also tracks a window its events have not reported yet.
+- **Rdp** — the visible top-level window of a program hosting the RDP control: it
+  holds an input window of class `IHWindowClass` in `UIContainerClass` in
+  `UIMainClass` ([ADR-0013](adr/0013-rdp-detection-by-window-classes.md)). Found from
+  the input window itself (its `CREATE` event, or the cursor over it: the tracked
+  window is then its `GA_ROOT`), or by searching a top-level window's children
+  (`EnumChildWindows`) — only at startup, when a top-level window is shown and in
+  `trackCursorWindow`, never on the one-second sweep. The search on `SHOW` is what
+  catches mstsc, which creates the control while its window is still hidden.
+  Treated like an AnyDesk window otherwise.
 
 The one-second `tick()` drops a window only when it is destroyed or, for a ghost,
-stops meeting the ghost criteria. Visibility and position are deliberately not
+stops meeting the ghost criteria, or, for an RDP window, no longer holds an RDP
+control (a connection manager whose last session was closed). Visibility and position are deliberately not
 among them: a ghost its app hid (minimized) stays tracked and neutralized, marked
 `hidden` and drawn greyed out in the list, until it is destroyed. Minimizing
 WhatsApp also parks its ghost at -32000,-32000, off every screen, so the on-screen
@@ -199,12 +213,13 @@ parent process chain (Toolhelp snapshot) up from the WebView2 process until the 
 non-`msedgewebview2` process, then reads its full image path via
 `QueryFullProcessImageName`. Displayed as `Window title (executable.exe)`.
 
-## AnyDesk cursor overlay ([ADR-0012](adr/0012-anydesk-cursor-overlay.md))
+## Remote cursor overlay ([ADR-0012](adr/0012-anydesk-cursor-overlay.md), [ADR-0013](adr/0013-rdp-detection-by-window-classes.md))
 
 AnyDesk sets the remote cursor as an ordinary Win32 cursor on its session window,
-already shrunk. `CursorOverlay` shows an enlarged copy in a window of its own and
-hides the small original; the requirements are in
-[Specification.md](Specification.md#10-anydesk-remote-cursor).
+already shrunk; the RDP control does the same on its input window, at the remote
+computer's own size. `CursorOverlay` shows an enlarged copy in a window of its own
+and hides the small original; the requirements are in
+[Specification.md](Specification.md#10-anydesk-remote-cursor) (RDP: section 10.9).
 
 ```mermaid
 sequenceDiagram
@@ -214,7 +229,7 @@ sequenceDiagram
     participant V as Overlay window
     W->>O: WinEvent OBJID_CURSOR (location / name / show / hide)
     O->>W: GetCursorInfo, GetCursorPos, WindowFromPoint, GetClassName
-    alt global on, cursor showing, root class ad_win, not a system cursor, that window switched on
+    alt global on, cursor showing, root class ad_win or RDP input window, not a system cursor, that window switched on
         opt handle, zoom or monitor DPI changed (always on a name change)
             O->>I: Read(cursor, dpi) and Scale(image, zoom)
             I-->>O: premultiplied ARGB + scaled hotspot
@@ -239,13 +254,31 @@ sequenceDiagram
   with `MagShowSystemCursor`, but is cleared when someone else hides it (the Windows
   Magnifier's full-screen mode), so the flag can be required unconditionally. The
   root window under the cursor must have the class `ad_win` (compared up to the first
-  `#`), and the cursor must not be one of the `LoadCursor(NULL, IDC_*)` handles.
+  `#`), or the window under the cursor must be an RDP input window (`IHWindowClass`,
+  parent `UIContainerClass`, grandparent `UIMainClass`, walked with
+  `GetAncestor(GA_PARENT)`: three `GetClassName` calls, no cache needed), and the
+  cursor must not be one of the `LoadCursor(NULL, IDC_*)` handles. Either way the
+  root window is the session window that the filter and Auto zoom work with.
 - **Image.** `GetIconInfo` + `GetDIBits` as top-down 32-bit pixels; colour with alpha
   is used as is, colour without alpha and monochrome cursors are decoded through the
-  AND/XOR masks. Inverting pixels become black with a white outline of radius
-  `max(1, round(DPI/96 × 0.8))`; the canvas grows by that radius so the outline is
-  never cut off. Scaling is sharp bilinear on premultiplied pixels with clamped
-  edges.
+  AND/XOR masks. Inverting pixels are kept apart (`Image::xr`: the colour the
+  screen is XORed with) and stay transparent in the overlay. Scaling is sharp
+  bilinear on premultiplied pixels with clamped edges; inverting pixels are scaled
+  crisp (covered at least half, or not).
+- **Real inversion.** A layered window cannot XOR the screen, so a second window,
+  class `DeGhosterCursorOverlayXor`, shows the inverting pixels: on every paint the
+  screen under the cursor is read with `BitBlt` and `CursorImage::XorLayer` writes
+  screen XOR colour there and the key colour (magenta) everywhere else. That window
+  is colour-keyed (`LWA_COLORKEY`) and left out of screen captures
+  (`WDA_EXCLUDEFROMCAPTURE`), so the next read never sees its own output; the
+  overlay is in the read but transparent at those pixels. Windows refuses
+  `WDA_EXCLUDEFROMCAPTURE` for an `UpdateLayeredWindow` window, which is why the
+  per-pixel-alpha overlay cannot do this itself. The XOR window is repainted on
+  every cursor event and on a 50 ms timer while an inverting cursor is shown, and
+  kept directly above the overlay. Where the exclusion is not available (before
+  Windows 10 2004) `create()` drops the XOR window and inverting pixels become black
+  with a white outline of radius `max(1, round(DPI/96 × 0.8))` instead (the canvas
+  grows by that radius so the outline is never cut off).
 - **Window.** `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE |
   WS_EX_TOOLWINDOW`, class `DeGhosterCursorOverlay`; `WM_NCHITTEST` answers
   `HTTRANSPARENT` and `WM_MOUSEACTIVATE` `MA_NOACTIVATE`. Every move re-asserts
@@ -258,7 +291,7 @@ sequenceDiagram
 - **Auto zoom.** The picture of the current cursor is read once per shape
   (`CursorImage::Read`) and fingerprinted (`Key`, since handles get reused). With
   Auto on, every event credits the time since the previous one (at most 2 s) to the
-  picture shown until then, in an `AutoZoom` per AnyDesk root window, which keeps
+  picture shown until then, in an `AutoZoom` per session root window, which keeps
   these spans for the last 10 s only. The reference is the picture with the most time
   within them (with a 1.5× hysteresis); the zoom is the local
   arrow's height — the visible rows (≥ 50 % opacity, so drop shadows do not count)
@@ -266,10 +299,10 @@ sequenceDiagram
   cached per DPI — divided by the reference's visible height. A zoom change re-renders
   the current picture from the cached source. `AutoZoom` entries of closed windows
   are dropped when a new window is added.
-- **Per window, switched per program.** Each AnyDesk window is a tracked case with its
-  own row and eye; the eye switches its program, like a ghost's. The overlay gets a
-  filter from `MainWindow` that looks the root window up with
-  `GhostEngine::trackAnyDesk` and checks its program's opt-out; toggling an eye calls
+- **Per window, switched per program.** Each AnyDesk and RDP window is a tracked case
+  with its own row and eye; the eye switches its program, like a ghost's. The overlay
+  gets a filter from `MainWindow` that looks the root window up with
+  `GhostEngine::trackCursorWindow` and checks its program's opt-out; toggling an eye calls
   `CursorOverlay::refresh()`, so a window switched off under the cursor loses the
   overlay at once.
 - **Lifecycle.** `MainWindow` pushes `globalEnabled`, Auto and the fixed zoom after every change; `WTS_SESSION_LOCK` hides the overlay and restores the
@@ -281,7 +314,7 @@ sequenceDiagram
 
 | Set | Meaning |
 |---|---|
-| tracked | every live window of every case currently listed (ghosts and AnyDesk windows, hidden ones included) |
+| tracked | every live window of every case currently listed (ghosts, AnyDesk and RDP windows, hidden ones included) |
 | cloaked | tracked ghosts currently cloaked by us |
 | disabled | per-program opt-out, key `FixInfo::disableKey()` (the window's program) |
 | global enabled | master switch |
@@ -318,7 +351,7 @@ Root: `HKCU\Software\DeGhoster`.
 |---|---|---|
 | `GlobalEnabled` | DWORD | master switch |
 | `Disabled\<program key>` | String | one value per disabled program (see [State model](#state-model)); the data repeats the key |
-| `CursorOverlayAuto` | DWORD | automatic zoom per AnyDesk window (default 1) |
+| `CursorOverlayAuto` | DWORD | automatic zoom per session window, AnyDesk and RDP (default 1) |
 | `CursorOverlayZoom` | DWORD | fixed overlay zoom in percent, 100 … 600 on a 10 % grid; written on first start from the primary monitor's scaling |
 
 The per-user autostart entry (`...\CurrentVersion\Run\DeGhoster`) is managed by the
@@ -364,7 +397,7 @@ and are not in the table.
 ## Dependencies
 
 None beyond Windows system libraries: `comctl32`, `dwmapi`, `uxtheme`, `gdiplus`,
-`shell32`, `user32`, `gdi32`, `magnification` (hiding the small AnyDesk cursor),
+`shell32`, `user32`, `gdi32`, `magnification` (hiding the small remote cursor),
 `shcore` (per-monitor DPI) and `wtsapi32` (session lock notifications). No bundled
 assets. License: **GNU AGPL v3** (see
 `LICENSE`, `NOTICE`).

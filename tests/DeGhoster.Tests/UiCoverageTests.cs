@@ -22,6 +22,10 @@ public class UiCoverageTests
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002, MOUSEEVENTF_LEFTUP = 0x0004;
     private const int IDC_LIST = 1001, IDC_POWER = 1002, IDC_INFO = 1003, IDC_EXIT = 1004;
     private const uint LVM_GETHEADER = 0x101F;
+    private const uint MN_GETHMENU = 0x01E1;
+    private const uint WS_POPUP = 0x80000000, WS_VISIBLE = 0x10000000, WS_EX_TOOLWINDOW = 0x00000080, WS_EX_TOPMOST = 0x00000008;
+    private const int WindowEntry = 3;   // tray menu position of the test's ghost (sorts first)
+    private static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new(-4);
 
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int left, top, right, bottom; }
 
@@ -128,7 +132,7 @@ public class UiCoverageTests
     }
 
     [Fact]
-    public void Tray_menu_toggles_a_window()
+    public void Tray_menu_toggles_in_place_and_closes_on_focus_loss()
     {
         var (build, dg, sim, ghost, host) = StartWithGhost("64", null);
         try
@@ -156,8 +160,9 @@ public class UiCoverageTests
                 if (FindWindowEx(IntPtr.Zero, IntPtr.Zero, "#32768", null) == IntPtr.Zero) continue;
 
                 // Menu order: Status Window (default), Active, separator, <window
-                // entry>, separator, About, Exit. Walk to the entry and pick it.
-                for (int i = 0; i < 3; i++) { Key(VK_DOWN); Thread.Sleep(90); }
+                // entry>, separator, Settings, separator, About, Exit. Walk to the
+                // entry and pick it.
+                for (int i = 0; i < WindowEntry; i++) { Key(VK_DOWN); Thread.Sleep(90); }
                 Key(VK_RETURN);
 
                 why = "toggling the window via the tray menu did not un-cloak it";
@@ -165,8 +170,57 @@ public class UiCoverageTests
                 if (!uncloaked) { Key(VK_ESCAPE); Thread.Sleep(300); }   // dismiss a stuck menu
             }
             Assert.True(uncloaked, why);
+
+            // A toggle flips in place: the menu is still there after Enter ...
+            Thread.Sleep(300);
+            IntPtr menu = TrayMenu(dg);
+            Assert.True(menu != IntPtr.Zero, "the tray menu closed after toggling an entry with Enter");
+
+            // ... and after a real click on the same entry, which switches it back.
+            // The menu is laid out in physical pixels; read its item and place the
+            // cursor in the same (per-monitor aware) coordinates.
+            IntPtr hmenu = SendMessage(menu, MN_GETHMENU, IntPtr.Zero, IntPtr.Zero);
+            IntPtr dpiContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+            try
+            {
+                Assert.True(GetMenuItemRect(menu, hmenu, WindowEntry, out RECT item), "window entry not found in the menu");
+                SetCursorPos((item.left + item.right) / 2, (item.top + item.bottom) / 2);
+            }
+            finally { SetThreadDpiAwarenessContext(dpiContext); }
+            Thread.Sleep(200);
+            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, IntPtr.Zero);
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
+            Assert.True(WaitUntil(() => Cloaked(ghost) != 0, TimeSpan.FromSeconds(6)),
+                        "clicking the window entry did not cloak the window again");
+            Assert.True(TrayMenu(dg) != IntPtr.Zero, "the tray menu closed after clicking a toggle entry");
+
+            // Losing the focus is what closes it. While a menu is open no other
+            // process may take the foreground, so the focus goes the way the user
+            // moves it: a click elsewhere, here on a window of the test's own.
+            IntPtr other = CreateWindowEx(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, "STATIC", "", WS_POPUP | WS_VISIBLE,
+                                          20, 20, 60, 60, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            try
+            {
+                SetCursorPos(50, 50);
+                Thread.Sleep(200);
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, IntPtr.Zero);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
+                Assert.True(WaitUntil(() => TrayMenu(dg) == IntPtr.Zero, TimeSpan.FromSeconds(3)),
+                            "the tray menu stayed open after a click elsewhere");
+            }
+            finally { DestroyWindow(other); }
         }
         finally { Cleanup(dg, sim); }
+    }
+
+    // The open tray menu: the visible menu window of DeGhoster's process.
+    private static IntPtr TrayMenu(Process dg)
+    {
+        IntPtr m = IntPtr.Zero;
+        while ((m = FindWindowEx(IntPtr.Zero, m, "#32768", null)) != IntPtr.Zero)
+            if (IsWindowVisible(m) && GetWindowThreadProcessId(m, out uint pid) != 0 && pid == (uint)dg.Id)
+                return m;
+        return IntPtr.Zero;
     }
 
     [Fact]
@@ -313,6 +367,15 @@ public class UiCoverageTests
     private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern bool GetMenuItemRect(IntPtr hwnd, IntPtr menu, int item, out RECT rc);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateWindowEx(uint exStyle, string cls, string title, uint style,
+        int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
+    [DllImport("user32.dll")]
+    private static extern bool DestroyWindow(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
 }

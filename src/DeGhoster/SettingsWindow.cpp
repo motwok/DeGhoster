@@ -244,7 +244,7 @@ void SettingsWindow::sync()
     SendMessageW(auto_, BM_SETCHECK, automatic ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(zoom_, ui::SLM_SETPOS, settings_.cursorOverlayZoom(), 0);
     // Global off greys out the section; the fixed zoom only counts without Auto.
-    // Each AnyDesk window is switched on and off with its own eye in the status
+    // Each session window is switched on and off with its own eye in the status
     // list, like every other case.
     HWND focus = GetFocus();
     EnableWindow(auto_, global);

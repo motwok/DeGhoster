@@ -55,17 +55,35 @@ Write-Host "==> Building $Config (x86 + x64) with PDBs..." -ForegroundColor Cyan
 & $cmake -S $repo -B "$repo\build\cmake\x64" -A x64 | Out-Null
 & $cmake --build "$repo\build\cmake\x64" --config $Config
 
+# A throwaway settings root, like the integration tests use. The run toggles eyes
+# on real windows too (a WhatsApp ghost is listed next to the simulators), and
+# against the user's own HKCU\Software\DeGhoster that switched WhatsApp off for
+# good. DeGhoster and the driver read the root from DEGHOSTER_SETTINGS_ROOT, which
+# every process started below inherits.
+$settingsPrefix = 'DeGhoster_Manual_'
+Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue |
+    Where-Object { $_.PSChildName -like "$settingsPrefix*" } |
+    ForEach-Object { Remove-Item -LiteralPath $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue }   # left by an aborted run
+$settingsRoot = "Software\$settingsPrefix" + [guid]::NewGuid().ToString('N')
+$env:DEGHOSTER_SETTINGS_ROOT = $settingsRoot
+
 Write-Host "==> Starting guided coverage session (follow the on-screen steps)..." -ForegroundColor Cyan
+Write-Host "    Settings for this run: HKCU\$settingsRoot (your own settings stay untouched)"
 $driverArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$repo\tests\manual-driver.ps1")
 if ($DpiOnly) { $driverArgs += '-DpiOnly' }
-& $occ `
-    --sources "$repo\src" `
-    --modules "$repo\build" `
-    --cover_children --quiet `
-    --export_type "binary:$out\manual.cov" `
-    --export_type "cobertura:$out\manual.cobertura.xml" `
-    --export_type "html:$out\manual-html" `
-    -- powershell @driverArgs
+try {
+    & $occ `
+        --sources "$repo\src" `
+        --modules "$repo\build" `
+        --cover_children --quiet `
+        --export_type "binary:$out\manual.cov" `
+        --export_type "cobertura:$out\manual.cobertura.xml" `
+        --export_type "html:$out\manual-html" `
+        -- powershell @driverArgs
+} finally {
+    Remove-Item -LiteralPath "HKCU:\$settingsRoot" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item Env:\DEGHOSTER_SETTINGS_ROOT -ErrorAction SilentlyContinue
+}
 
 # Commit these two files: the build server merges them into its combined report.
 Write-Host "==> Storing the manual run's coverage in tests\coverage-data..." -ForegroundColor Cyan

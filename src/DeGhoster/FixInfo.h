@@ -21,9 +21,11 @@
 
 struct FixInfo {
     // Which case the window is: a click-eating ghost (neutralized by cloaking it
-    // from inside its process) or an AnyDesk session window (whose remote cursor
-    // the CursorOverlay enlarges; nothing is done to the window itself).
-    enum class Kind { Ghost, AnyDesk };
+    // from inside its process), an AnyDesk session window, or the top-level window
+    // of a program hosting the RDP control (mstsc, WSLg, connection managers). The
+    // CursorOverlay enlarges the remote cursor of the last two; nothing is done to
+    // those windows themselves.
+    enum class Kind { Ghost, AnyDesk, Rdp };
 
     Kind kind = Kind::Ghost;
     DWORD pid = 0;
