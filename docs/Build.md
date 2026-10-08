@@ -152,6 +152,11 @@ Integration tests live in `tests/` and prove the actual neutralization end to en
   control instead: a top-level window holding the child chain `UIMainClass` >
   `UIContainerClass` > `IHWindowClass` (plus `OPContainerClass`), or any other chain
   for the negative cases, with the custom cursors on the innermost window.
+- **`tests/FailingHelper`** (C++, `build\FailingHelper64.exe` / `FailingHelper32.exe`)
+  stands in for an injector helper whose hook is refused (an elevated target): it
+  logs every launch next to itself and exits like the real helper does. A test copies
+  it over `DeGhoster.Helper64.exe` to prove a target that cannot be hooked is retried
+  on the cooldown, not on every tick.
 - **`tests/DeGhoster.Tests`** (xUnit, .NET) launches GhostSim + DeGhoster and asserts
   the window becomes `DWMWA_CLOAKED`. The `[Theory]` runs both bitnesses, so it covers
   the x64 (Helper64 → Hook64) and x86 (Helper32 → Hook32) injection paths.
@@ -174,8 +179,8 @@ dotnet test tests\DeGhoster.Tests\DeGhoster.Tests.csproj -c Release
 
 They need an **interactive desktop with DWM** (they inject across processes and read
 DWM state), so they run reliably locally and in the CI Windows job, but not in a
-headless/session-0 context. GhostSim and CursorSim are test-only binaries and are
-**not** shipped in the ZIP/MSI. Disable building them with
+headless/session-0 context. GhostSim, CursorSim and FailingHelper are test-only
+binaries and are **not** shipped in the ZIP/MSI. Disable building them with
 `-DDEGHOSTER_BUILD_TESTS=OFF`.
 
 ### Code coverage

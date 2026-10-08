@@ -32,6 +32,10 @@ public:
     // since the previous call is credited to the picture shown until now, capped
     // so a mouse resting on one shape does not outweigh real use.
     void observe(uint64_t key, int visibleHeight, ULONGLONG now);
+    // The picture went off screen (overlay hidden, cursor over another window):
+    // credits it until now and stops the clock, so the time until a picture is
+    // next seen does not count.
+    void pause(ULONGLONG now);
 
     // Zoom in percent that makes the reference picture `targetHeight` pixels tall,
     // on the settings' grid; 0 while nothing has been seen.

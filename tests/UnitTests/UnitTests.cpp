@@ -215,6 +215,25 @@ static void AutoZoomTests()
           "older time drops out, so the arrow is the reference again within 10 s");
     Check(az.zoom(0) == 0, "no target height: no automatic zoom");
 
+    // Time while the overlay is hidden does not count. Without the pause the
+    // gap would be credited (capped) to the last picture and hand it the lead.
+    AutoZoom paused;
+    paused.observe(arrow, 16, 1000);
+    paused.observe(ibeam, 20, 2000);            // arrow 1000 ms
+    paused.pause(2300);                         // I-beam 300 ms, then hidden
+    paused.observe(ibeam, 20, 7000);            // nothing for the gap
+    paused.observe(arrow, 16, 7100);            // I-beam 100 ms
+    Check(paused.reference() == arrow, "time while the overlay was hidden is not credited");
+    paused.pause(7200);
+    paused.pause(7300);
+    Check(paused.reference() == arrow, "a repeated pause is harmless");
+    AutoZoom unpaused;
+    unpaused.observe(arrow, 16, 1000);
+    unpaused.observe(ibeam, 20, 2000);
+    unpaused.observe(ibeam, 20, 7000);          // I-beam credited 2000 ms (capped)
+    unpaused.observe(arrow, 16, 7100);
+    Check(unpaused.reference() == ibeam, "the same gap on screen does hand over the lead");
+
     AutoZoom tiny;
     tiny.observe(7, 2, 0);
     Check(tiny.zoom(40) == Settings::kZoomMax, "the automatic zoom is clamped to the maximum");
@@ -694,6 +713,26 @@ static void SettingsWindowTests()
         GetWindowRect(info, &r);
         SendMessageW(info, WM_DPICHANGED, MAKEWPARAM(144, 144), (LPARAM)&r);
         RedrawWindow(info, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+
+        // A colour-scheme change while open re-themes it: the background pixel
+        // follows the apps mode, both ways.
+        auto background = [&]() {
+            RedrawWindow(info, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
+            HDC dc = GetDC(info);
+            COLORREF c = GetPixel(dc, 5, 5);
+            ReleaseDC(info, dc);
+            return c;
+        };
+        SetEnvironmentVariableW(L"DEGHOSTER_FORCE_THEME", L"dark");
+        SendMessageW(info, WM_SETTINGCHANGE, 0, (LPARAM)L"ImmersiveColorSet");
+        Check(background() == Theme::current().back, "the About window turns dark on a colour-scheme change");
+        SetEnvironmentVariableW(L"DEGHOSTER_FORCE_THEME", L"light");
+        SendMessageW(info, WM_SETTINGCHANGE, 0, (LPARAM)L"Other");
+        Check(background() != Theme::current().back, "another settings broadcast leaves the theme alone");
+        SendMessageW(info, WM_SETTINGCHANGE, 0, (LPARAM)L"ImmersiveColorSet");
+        Check(background() == Theme::current().back, "and back to light");
+        SetEnvironmentVariableW(L"DEGHOSTER_FORCE_THEME", nullptr);
+
         SendMessageW(info, WM_COMMAND, IDOK, 0);
         Pump();
         Check(InfoWindow::ActiveHandle() == nullptr, "OK closes the About window");
@@ -784,6 +823,16 @@ static void GhostEngineTests()
     ShowWindow(ghost, SW_SHOWNA);
     eng.tick();
     Check(t.count(ghost) && !t.at(ghost).hidden, "shown again, the ghost is no longer marked");
+
+    // The title follows the window (a session name, an unread count). The name
+    // event skips our own process, so this is the tick's backstop.
+    const int beforeTitle = l.changes;
+    SetWindowTextW(ghost, L"DeGhoster-EngineGhost (3)");
+    eng.tick();
+    Check(t.count(ghost) && t.at(ghost).title == L"DeGhoster-EngineGhost (3)" && l.changes > beforeTitle,
+          "a changed title is picked up and notified");
+    eng.tick();
+    Check(l.changes == beforeTitle + 1, "an unchanged title does not notify again");
 
     // The cursor can reach a new AnyDesk window before any of its events do.
     HWND ad2 = MakeTopLevel(L"ad_win#9", L"987 654 321 - AnyDesk", 0);
@@ -1305,18 +1354,13 @@ static void HookInjectorTests()
     Check(inj.load(proc::ExeDir()), "load finds both helpers");
     Check(inj.available(), "available is true once both helpers are there");
 
-    // A helper started for a thread that does not exist installs nothing and
-    // exits. The first call only starts it, so it reports Pending; once it has
-    // died the next call must report Failed so the caller's cooldown kicks in.
+    // A thread that does not exist cannot be pinned, so no helper is started for
+    // it: its entry would read as stale on the next sweep and the helper be
+    // replaced every tick. Refused at once, so the caller's cooldown kicks in.
     const DWORD deadThread = 0xFFFFFFFCu;
-    Check(inj.ensure(deadThread, GetCurrentProcessId(), nullptr) == HookInjector::Inject::Pending,
-          "ensure reports Pending while the helper starts");
-    HookInjector::Inject late = HookInjector::Inject::Pending;
-    for (int i = 0; i < 100 && late == HookInjector::Inject::Pending; ++i) {
-        Sleep(50);
-        late = inj.ensure(deadThread, GetCurrentProcessId(), nullptr);
-    }
-    Check(late == HookInjector::Inject::Failed, "ensure reports Failed once the helper is gone");
+    Check(inj.ensure(deadThread, GetCurrentProcessId(), nullptr) == HookInjector::Inject::Failed,
+          "ensure refuses a thread that does not exist");
+    Check(!proc::HelperRunning(), "and starts no helper for it");
 
     // The real path, on this very thread: the helper comes up, signals readiness
     // and the entry flips to Ready.
@@ -1360,15 +1404,35 @@ static void HookInjectorTests()
         Check(WaitForSingleObject(probe, 5000) == WAIT_OBJECT_0, "probe thread exits");
         for (int i = 0; i < 100 && proc::HelperRunning(); ++i) Sleep(50);
 
-        // The entry is stale now. After the sweep, asking again must start a fresh
-        // helper (Pending) rather than report the dead one as a failure.
-        inj.pruneDead();
-        Check(inj.ensure(probeTid, GetCurrentProcessId(), nullptr) == HookInjector::Inject::Pending,
-              "pruneDead drops the entry for a dead thread");
+        // The entry is stale now. The helper went with its thread, which is no
+        // failure to report; and the dead thread is refused rather than hooked.
+        Check(inj.pruneDead().empty(), "pruneDead does not report a helper that went with its thread");
+        Check(inj.ensure(probeTid, GetCurrentProcessId(), nullptr) == HookInjector::Inject::Failed,
+              "pruneDead drops the entry for a dead thread, which is then refused");
         inj.removeAll();
         CloseHandle(probe);
     }
     CloseHandle(stop);
+
+    // A helper that dies while its thread lives on could not hook it. The sweep
+    // reports its pid, so the engine puts it on cooldown instead of starting a
+    // fresh helper every tick. The hook DLL moved aside makes the helper fail.
+    {
+        const std::wstring dll = proc::ExeDir() + L"DeGhoster.Hook64.dll";
+        const std::wstring hidden = dll + L".unittesthidden";
+        if (Check(MoveFileExW(dll.c_str(), hidden.c_str(), MOVEFILE_REPLACE_EXISTING) != FALSE,
+                  "hook DLL moved aside")) {
+            Check(inj.ensure(self, GetCurrentProcessId(), nullptr) == HookInjector::Inject::Pending,
+                  "a helper starts although its DLL is gone");
+            for (int i = 0; i < 100 && proc::HelperRunning(); ++i) Sleep(50);
+            Check(!proc::HelperRunning(), "the helper dies without its DLL");
+            std::vector<DWORD> died = inj.pruneDead();
+            Check(died.size() == 1 && died[0] == GetCurrentProcessId(),
+                  "pruneDead reports the pid of a helper that died on a live thread");
+            Check(inj.pruneDead().empty(), "a reported helper is dropped");
+            MoveFileExW(hidden.c_str(), dll.c_str(), MOVEFILE_REPLACE_EXISTING);
+        }
+    }
 
     // The documented bail-out: a helper that cannot open the host has no exit
     // condition (it owns no window, so no WM_QUIT ever reaches it) and must not

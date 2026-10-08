@@ -43,6 +43,10 @@ constexpr int     kLinkLicense = 102;
 // Brand strings stay English; everything else comes from the string table.
 constexpr wchar_t kTagline[] = L"Who you gonna call? Bustin' invisible, click-eating window ghosts.";
 constexpr wchar_t kCopy[]    = L"Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de";
+
+// Mirroring only flips the alignment; the reading order of the localized text
+// has to be asked for, like the settings window does.
+UINT TextFlags() { return DT_NOPREFIX | (loc::isRtl() ? DT_RTLREADING : 0); }
 }
 
 HWND InfoWindow::s_active = nullptr;
@@ -161,7 +165,7 @@ int InfoWindow::descExtra() const
     HDC dc = GetDC(nullptr);
     HFONT of = (HFONT)SelectObject(dc, f);
     RECT r{ 0, 0, S(400) - 2 * S(24), 0 };
-    DrawTextW(dc, loc::t(IDS_INFO_DESC), -1, &r, DT_CALCRECT | DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+    DrawTextW(dc, loc::t(IDS_INFO_DESC), -1, &r, DT_CALCRECT | DT_LEFT | DT_WORDBREAK | TextFlags());
     SelectObject(dc, of);
     ReleaseDC(nullptr, dc);
     DeleteObject(f);
@@ -197,14 +201,14 @@ void InfoWindow::paint(HDC hdc)
     DrawTextW(hdc, kTagline, -1, &r1, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
     SetTextColor(hdc, theme_.foreDim);
     RECT r2{ S(24), S(138), rc.right - S(24), S(190) + extra_ };
-    DrawTextW(hdc, loc::t(IDS_INFO_DESC), -1, &r2, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+    DrawTextW(hdc, loc::t(IDS_INFO_DESC), -1, &r2, DT_LEFT | DT_WORDBREAK | TextFlags());
     RECT r3{ S(24), S(198) + extra_, rc.right - S(24), S(218) + extra_ };
     DrawTextW(hdc, kCopy, -1, &r3, DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
     RECT r4{ S(24), S(220) + extra_, rc.right - S(24), S(240) + extra_ };
-    DrawTextW(hdc, loc::t(IDS_INFO_LICENSE), -1, &r4, DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
+    DrawTextW(hdc, loc::t(IDS_INFO_LICENSE), -1, &r4, DT_LEFT | DT_SINGLELINE | TextFlags());
     SetTextColor(hdc, theme_.fore);
     RECT r5{ S(24), S(286) + extra_, rc.right - S(24), S(316) + extra_ };
-    DrawTextW(hdc, loc::t(IDS_INFO_SUPPORT), -1, &r5, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+    DrawTextW(hdc, loc::t(IDS_INFO_SUPPORT), -1, &r5, DT_LEFT | DT_WORDBREAK | TextFlags());
 
     SelectObject(hdc, old);
     DeleteObject(title);
@@ -251,6 +255,18 @@ LRESULT InfoWindow::handle(UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(hwnd_, nullptr, TRUE);
         return 0;
     }
+
+    case WM_SETTINGCHANGE:
+        // Follow a switch between light and dark apps mode while open, as the
+        // main and the settings window do.
+        if (lp && lstrcmpiW((LPCWSTR)lp, L"ImmersiveColorSet") == 0) {
+            theme_ = Theme::current();
+            if (brush_) DeleteObject(brush_);
+            brush_ = CreateSolidBrush(theme_.back);
+            ApplyDarkTitleBar(hwnd_, theme_.dark);
+            InvalidateRect(hwnd_, nullptr, TRUE);
+        }
+        return 0;
 
     case WM_ERASEBKGND: {
         RECT rc; GetClientRect(hwnd_, &rc);

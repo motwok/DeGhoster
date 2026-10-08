@@ -266,7 +266,10 @@ int CursorOverlay::effectiveZoom(HWND root, UINT dpi)
         for (auto it = autos_.begin(); it != autos_.end();)
             it = IsWindow(it->first) ? std::next(it) : autos_.erase(it);
     AutoZoom& az = autos_[root];
-    az.observe(srcKey_, srcHeight_, GetTickCount64());
+    const ULONGLONG now = GetTickCount64();
+    // Straight from one session window into another: the first one's clock stops.
+    for (auto& kv : autos_) if (kv.first != root) kv.second.pause(now);
+    az.observe(srcKey_, srcHeight_, now);
     const int z = az.zoom(TargetHeight(dpi));
     return z ? z : zoom_;
 }
@@ -419,6 +422,10 @@ void CursorOverlay::hide()
     // them) an unchanged handle must not re-show the old picture unread.
     shownCursor_ = nullptr;
     hideSystemCursor(false);
+    // Off screen now: the automatic zoom must not credit the time until the
+    // cursor is next seen to whatever picture was shown last.
+    const ULONGLONG now = GetTickCount64();
+    for (auto& kv : autos_) kv.second.pause(now);
 }
 
 void CursorOverlay::hideSystemCursor(bool hideIt)
@@ -442,6 +449,12 @@ LRESULT CALLBACK CursorOverlay::WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         if (s_instance->xorDc_)
             BitBlt(dc, 0, 0, s_instance->xorSize_.cx, s_instance->xorSize_.cy, s_instance->xorDc_, 0, 0, SRCCOPY);
         EndPaint(h, &ps);
+        return 0;
+    }
+    if (msg == WM_SETTINGCHANGE && wp == SPI_SETCURSORS && s_instance) {
+        // A new pointer size or scheme: the local arrow the automatic zoom aims
+        // at is measured again on the next cursor.
+        s_instance->targets_.clear();
         return 0;
     }
     if (msg == WM_TIMER && wp == kRefreshTimer) {

@@ -58,6 +58,14 @@ void AutoZoom::observe(uint64_t key, int visibleHeight, ULONGLONG now)
     if (best != ref_ && bestMs > shown[ref_] * kHysteresis) ref_ = best;
 }
 
+void AutoZoom::pause(ULONGLONG now)
+{
+    if (!haveCur_) return;
+    const ULONGLONG dt = now > last_ ? now - last_ : 0;
+    if (dt) spans_.push_back({ cur_, now, std::min(dt, kMaxCreditMs) });
+    haveCur_ = false;
+}
+
 int AutoZoom::zoom(int targetHeight) const
 {
     if (!haveRef_ || targetHeight <= 0) return 0;

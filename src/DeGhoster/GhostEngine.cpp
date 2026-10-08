@@ -144,13 +144,18 @@ void GhostEngine::start(HWND host)
                            0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
     we2_ = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, nullptr, winEventThunk,
                            0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    // NAMECHANGE: a tracked window's title, shown in the list and the tray menu,
+    // follows the window (a session name, an unread count).
+    we3_ = SetWinEventHook(EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE, nullptr, winEventThunk,
+                           0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 }
 
 void GhostEngine::stop(DWORD uncloakBudgetMs)
 {
     if (we1_) UnhookWinEvent(we1_);
     if (we2_) UnhookWinEvent(we2_);
-    we1_ = we2_ = nullptr;
+    if (we3_) UnhookWinEvent(we3_);
+    we1_ = we2_ = we3_ = nullptr;
 
     pending_.clear();                       // nothing may re-post a cloak now
     uncloakAllAndWait(uncloakBudgetMs);     // must precede removeAll(): the hook
@@ -201,6 +206,7 @@ void GhostEngine::onWinEvent(DWORD event, HWND hwnd)
     }
     if (tracked_.count(hwnd)) {
         if (event == EVENT_OBJECT_SHOW || event == EVENT_OBJECT_HIDE) updateHidden(hwnd);
+        else if (event == EVENT_OBJECT_NAMECHANGE) updateTitle(hwnd);
         return;
     }
     // An RDP host creates the control while still hidden (mstsc does so behind its
@@ -216,6 +222,16 @@ void GhostEngine::updateHidden(HWND h)
     const bool hidden = !IsWindowVisible(h);
     if (it->second.hidden == hidden) return;
     it->second.hidden = hidden;
+    if (listener_) listener_->onTrackedChanged();
+}
+
+void GhostEngine::updateTitle(HWND h)
+{
+    auto it = tracked_.find(h);
+    if (it == tracked_.end()) return;
+    std::wstring title = proc::WindowTitle(h);
+    if (it->second.title == title) return;
+    it->second.title = std::move(title);
     if (listener_) listener_->onTrackedChanged();
 }
 
@@ -318,7 +334,9 @@ void GhostEngine::untrack(HWND h)
 void GhostEngine::tick()
 {
     expirePending();
-    hooks_.pruneDead();
+    // A helper that died while its thread lives on could not hook it. Without
+    // the cooldown the idle pass below would start a fresh one every tick.
+    for (DWORD pid : hooks_.pruneDead()) badPids_[pid] = GetTickCount64();
 
     // A hook can vanish underneath us (its helper killed or quarantined): the DLL's
     // detach path then uncloaks the window without any reply, and cloaked_ would
@@ -351,7 +369,10 @@ void GhostEngine::tick()
         if (ghost && !cloaked_.count(h) && !pending_.count(h)) idle.push_back(h);
     }
     for (HWND h : stale) untrack(h);
-    for (HWND h : live)  updateHidden(h);   // backstop for a missed show/hide event
+    for (HWND h : live) {                   // backstop for a missed show/hide or name event
+        updateHidden(h);
+        updateTitle(h);
+    }
     for (HWND h : idle)  reconcile(h);      // picks up ready helpers and lapsed cooldowns
 
     // Detection is otherwise purely event-driven, but the properties that make a
