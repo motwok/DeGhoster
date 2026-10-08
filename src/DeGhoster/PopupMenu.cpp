@@ -210,6 +210,9 @@ UINT PopupMenu::track(HWND owner, bool dark, POINT pt, const std::function<void(
 {
     onToggle_ = onToggle;
     dpi_ = MonitorDpi(pt);
+    // The menu of a mirrored owner is mirrored too, which only flips the
+    // alignment; the reading order of the text has to be asked for.
+    rtl_ = (GetWindowLongW(owner, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) != 0;
     openTheme(owner, dark);
 
     NONCLIENTMETRICSW ncm{ sizeof(ncm) };
@@ -367,7 +370,7 @@ void PopupMenu::draw(const DRAWITEMSTRUCT* d)
     RECT text{ gutterRight + mText_.cxLeftWidth, rc.top + mText_.cyTopHeight,
                rc.right - mText_.cxRightWidth, rc.bottom - mText_.cyBottomHeight };
     const DWORD flags = DT_SINGLELINE | DT_LEFT | DT_VCENTER | (it.literal ? DT_NOPREFIX : 0)
-                      | ((d->itemState & ODS_NOACCEL) ? DT_HIDEPREFIX : 0);
+                      | ((d->itemState & ODS_NOACCEL) ? DT_HIDEPREFIX : 0) | (rtl_ ? DT_RTLREADING : 0);
     const int state = off ? (hot ? MPI_DISABLEDHOT : MPI_DISABLED) : (hot ? MPI_HOT : MPI_NORMAL);
     HGDIOBJ old = SelectObject(dc, it.isDefault ? bold_ : font_);
     DrawThemeText(theme_, dc, MENU_POPUPITEM, state, it.text.c_str(), -1, flags, 0, &text);
@@ -409,7 +412,7 @@ void PopupMenu::drawFlat(const DRAWITEMSTRUCT* d, const Item& it)
 
     RECT text{ gutterRight + mText_.cxLeftWidth, rc.top, rc.right - mText_.cxRightWidth, rc.bottom };
     const UINT flags = DT_SINGLELINE | DT_LEFT | DT_VCENTER | (it.literal ? DT_NOPREFIX : 0)
-                     | ((d->itemState & ODS_NOACCEL) ? DT_HIDEPREFIX : 0);
+                     | ((d->itemState & ODS_NOACCEL) ? DT_HIDEPREFIX : 0) | (rtl_ ? DT_RTLREADING : 0);
     HGDIOBJ old = SelectObject(dc, it.isDefault ? bold_ : font_);
     DrawTextW(dc, it.text.c_str(), -1, &text, flags);
     SelectObject(dc, old);

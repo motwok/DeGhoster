@@ -118,7 +118,10 @@ void Settings::load()
                 if (wcschr(name.data(), L'|')) legacy.push_back(name.data());
                 else disabled_.insert(name.data());
             }
-            // any other error for this index: skip it, keep enumerating
+            // A name that outgrew the buffer meanwhile is skipped. Any other error
+            // is persistent (the key deleted under us: ERROR_KEY_DELETED) and would
+            // repeat for every index, so stop instead of enumerating forever.
+            else if (r != ERROR_SUCCESS && r != ERROR_MORE_DATA) break;
         }
         RegCloseKey(k);
         migrateLegacyOptOuts(legacy);

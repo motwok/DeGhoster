@@ -198,6 +198,55 @@ public class LifecycleTests
         }
     }
 
+    [Fact]
+    public void A_helper_that_cannot_hook_is_retried_on_a_cooldown_not_every_tick()
+    {
+        string build = FindBuildDir();
+        EnsureGlobalEnabled();
+        string h64 = Path.Combine(build, "DeGhoster.Helper64.exe");
+        string stub = Path.Combine(build, "FailingHelper64.exe");
+        string log = Path.Combine(build, "FailingHelper.log");
+        string title = "DGHFAIL-" + Guid.NewGuid().ToString("N");
+        Process? sim = null, dg = null;
+        try
+        {
+            foreach (var p in Helpers()) { try { p.Kill(); p.WaitForExit(5000); } catch { } }
+            // Swap the 64-bit helper for one that fails like a refused hook (an
+            // elevated target, say) and logs every launch.
+            Hide(h64);
+            File.Copy(stub, h64);
+            File.Delete(log);
+
+            sim = Start(Path.Combine(build, "GhostSim64.exe"), $"--title \"{title}\" --timeout 90", build);
+            IntPtr ghost = WaitFor(() => FindWindow(GhostClass, title), TimeSpan.FromSeconds(8));
+            Assert.True(ghost != IntPtr.Zero, "the ghost simulator window was not found");
+
+            dg = Start(Path.Combine(build, "DeGhoster.exe"), "", build);
+            IntPtr host = WaitFor(() => FindWindow(HostClass, null), TimeSpan.FromSeconds(15));
+            Assert.True(host != IntPtr.Zero, "the host window never appeared");
+
+            // A launch per 1 s tick would be about twenty here; the 15 s cooldown
+            // allows the first attempt and one retry. Counted per target: the
+            // log holds "<tick> <thread id> <host hwnd> <host pid>" per launch,
+            // and another ghost on the machine gets its own attempts.
+            Thread.Sleep(20000);
+            int launches = 0;
+            if (File.Exists(log))
+            {
+                string tid = GetWindowThreadProcessId(ghost, out _).ToString();
+                launches = File.ReadAllLines(log).Count(l => l.Split(' ').ElementAtOrDefault(1) == tid);
+            }
+            Assert.True(launches >= 1 && launches <= 3, $"the failing helper was launched {launches} times in 20 s");
+            Assert.False(dg.HasExited, "the app died while its helper kept failing");
+        }
+        finally
+        {
+            Cleanup(dg, sim);
+            Unhide(h64);   // overwrites the stub copy
+            File.Delete(log);
+        }
+    }
+
     private const string HiddenSuffix = ".coveragehidden";
 
     private static void Hide(string path)
@@ -374,6 +423,8 @@ public class LifecycleTests
     private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hwnd, out RECT rc);
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
     [DllImport("kernel32.dll")]

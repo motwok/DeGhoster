@@ -26,6 +26,11 @@ namespace {
 constexpr ULONGLONG kHelperReadyTimeoutMs = 5000;
 // Shared budget for letting every helper wind down on teardown.
 constexpr DWORD kHelperExitBudgetMs = 2000;
+// TerminateProcess only initiates the kill; the hook goes with the helper's
+// thread. Nudging the target before that would wake its pump with the hook
+// still installed, and the DLL would stay mapped. Bounded, so a helper the
+// kernel is slow to tear down cannot stall the UI thread.
+constexpr DWORD kHelperTerminateWaitMs = 500;
 
 constexpr wchar_t kHelper64[] = L"DeGhoster.Helper64.exe";
 constexpr wchar_t kHelper32[] = L"DeGhoster.Helper32.exe";
@@ -66,7 +71,12 @@ void HookInjector::nudge(DWORD threadId)
 
 void HookInjector::closeHelper(HelperEntry& e)
 {
-    if (e.proc)  { TerminateProcess(e.proc, 0); CloseHandle(e.proc); e.proc = nullptr; }
+    if (e.proc) {
+        TerminateProcess(e.proc, 0);
+        WaitForSingleObject(e.proc, kHelperTerminateWaitMs);
+        CloseHandle(e.proc);
+        e.proc = nullptr;
+    }
     if (e.ready) { CloseHandle(e.ready); e.ready = nullptr; }
 }
 
@@ -117,6 +127,11 @@ HookInjector::Inject HookInjector::ensure(DWORD threadId, DWORD pid, HWND host)
         if (diedOnUs || !born) return Inject::Failed;
     }
 
+    // A thread that cannot be pinned (gone, or not ours to open) gets no helper:
+    // its entry would read as stale on the next sweep, and the helper started
+    // for it would be killed and replaced every tick.
+    if (!born) return Inject::Failed;
+
     const std::wstring exe = helperPath(pid);
     if (!Exists(exe)) return Inject::Failed;
 
@@ -152,19 +167,25 @@ HookInjector::Inject HookInjector::ensure(DWORD threadId, DWORD pid, HWND host)
     // callbacks, WM_TIMER and click handlers, and blocking for seconds froze the
     // window. The caller's periodic tick re-drives this and the entry flips to
     // Ready as soon as the helper signals.
-    helpers_[threadId] = { pi.hProcess, ready, pi.dwThreadId, born, GetTickCount64() };
+    helpers_[threadId] = { pi.hProcess, ready, pi.dwThreadId, pid, born, GetTickCount64() };
     return Inject::Pending;
 }
 
-void HookInjector::pruneDead()
+std::vector<DWORD> HookInjector::pruneDead()
 {
     // Nothing tells us when a hooked thread exits, so entries for dead threads
     // would otherwise sit here, holding a live helper process, until shutdown.
+    std::vector<DWORD> died;
     for (auto it = helpers_.begin(); it != helpers_.end(); ) {
         const ULONGLONG born = threadBornTime(it->first);
         const bool alive = it->second.proc &&
                            WaitForSingleObject(it->second.proc, 0) == WAIT_TIMEOUT;
-        if (!alive || !born || born != it->second.born) {
+        const bool sameThread = born && born == it->second.born;
+        if (!alive || !sameThread) {
+            // A helper that died while its thread lives on could not hook it (the
+            // hook refused, the DLL not loadable). One that went with its thread
+            // merely did its job.
+            if (!alive && sameThread) died.push_back(it->second.pid);
             closeHelper(it->second);
             nudge(it->first);
             it = helpers_.erase(it);
@@ -172,6 +193,7 @@ void HookInjector::pruneDead()
             ++it;
         }
     }
+    return died;
 }
 
 void HookInjector::removeAll()

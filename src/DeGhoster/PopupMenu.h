@@ -93,6 +93,7 @@ private:
     HWND menuWnd_ = nullptr;
     HTHEME theme_ = nullptr;   // null: visual styles are off, draw in system colours
     UINT dpi_ = 96;
+    bool rtl_ = false;         // the owner is mirrored: text in right-to-left reading order
     HFONT font_ = nullptr, bold_ = nullptr;
     HBRUSH back_ = nullptr;    // the style's menu background, for the frame and the margins
     HHOOK filterHook_ = nullptr, cbtHook_ = nullptr;

@@ -66,6 +66,7 @@ private:
     // cursor reaching it), not on the periodic sweep.
     void handleCandidate(HWND, bool deep = false);
     void updateHidden(HWND);   // refresh FixInfo::hidden; notifies on a change
+    void updateTitle(HWND);    // refresh FixInfo::title; notifies on a change
     void reconcile(HWND);
     void uncloakAllAndWait(DWORD budgetMs);
     void untrack(HWND);      // reveal it if we cloaked it, then forget the window
@@ -83,7 +84,7 @@ private:
     std::unordered_set<HWND> cloaked_;
     std::unordered_map<HWND, ULONGLONG> pending_;   // hwnd -> tick when the request was posted
     std::unordered_map<DWORD, ULONGLONG> badPids_;  // failed hosts -> tick; retried after a cooldown
-    HWINEVENTHOOK we1_ = nullptr, we2_ = nullptr;
+    HWINEVENTHOOK we1_ = nullptr, we2_ = nullptr, we3_ = nullptr;
 
     static GhostEngine* s_instance;   // for the out-of-context win-event thunk
 };

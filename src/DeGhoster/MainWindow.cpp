@@ -92,8 +92,8 @@ LRESULT CALLBACK ListProc(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWOR
     return DefSubclassProc(h, msg, wp, lp);
 }
 
-// FixInfo::title is stored raw because it is part of the registry opt-out key, so
-// the placeholder for an untitled window is substituted here, at display time.
+// FixInfo::title is stored raw (the engine keeps it current), so the placeholder
+// for an untitled window is substituted here, at display time.
 std::wstring RowLabel(const FixInfo& fi)
 {
     const wchar_t* t = fi.title.empty() ? loc::t(IDS_UNTITLED) : fi.title.c_str();

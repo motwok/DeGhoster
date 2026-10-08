@@ -19,6 +19,7 @@
 #include <windows.h>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 // Installs the cloaking hook into target threads. DWMWA_CLOAK only takes effect
 // in-process, so the work has to happen inside the target.
@@ -40,7 +41,11 @@ public:
     bool load(const std::wstring& exeDir);   // remember the dir, check the helpers
     bool available() const { return available_; }
     Inject ensure(DWORD threadId, DWORD pid, HWND host);
-    void pruneDead();    // release entries whose target thread no longer exists
+    // Releases entries whose target thread no longer exists. Returns the pids of
+    // helpers that died while their thread lives on - they could not hook it -
+    // so the caller can put those on its cooldown instead of starting a fresh
+    // helper on every tick.
+    std::vector<DWORD> pruneDead();
     void removeAll();
 
 private:
@@ -51,6 +56,7 @@ private:
         HANDLE    proc       = nullptr;
         HANDLE    ready      = nullptr;   // helper signals it once its hook is live
         DWORD     mainThread = 0;         // for a graceful WM_QUIT on teardown
+        DWORD     pid        = 0;         // the target process, for the caller's cooldown
         ULONGLONG born       = 0;         // creation time of the hooked thread
         ULONGLONG startedAt  = 0;
     };
