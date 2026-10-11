@@ -82,6 +82,17 @@ bool CursorOverlay::IsRdpInputWindow(HWND h)
     return IsRdpInputChain(cls[0], cls[1], cls[2]);
 }
 
+bool CursorOverlay::IsRailClass(const wchar_t* cls)
+{
+    return cls && wcscmp(cls, L"RAIL_WINDOW") == 0;
+}
+
+bool CursorOverlay::IsRailWindow(HWND h)
+{
+    wchar_t cls[32] = L"";
+    return h && GetAncestor(h, GA_ROOT) == h && GetClassNameW(h, cls, ARRAYSIZE(cls)) && IsRailClass(cls);
+}
+
 bool CursorOverlay::create(HINSTANCE inst)
 {
     if (wnd_) return true;
@@ -222,15 +233,17 @@ void CursorOverlay::evaluate(bool shapeChanged)
 
     POINT pt;
     if (!GetCursorPos(&pt)) pt = ci.ptScreenPos;
-    // Over an AnyDesk session window (its root has AnyDesk's class) or over the
-    // input window of an RDP control, whatever program hosts it. Either way the
-    // session window is the root: that is what the status list shows.
+    // Over an AnyDesk session window (its root has AnyDesk's class), over a
+    // RemoteApp window (its root has the RAIL class; the remote cursor is set on
+    // that window itself) or over the input window of an RDP control, whatever
+    // program hosts it. Either way the session window is the root: that is what
+    // the status list shows.
     HWND under = WindowFromPoint(pt);
     HWND root = under ? GetAncestor(under, GA_ROOT) : nullptr;
     wchar_t cls[64] = L"";
     if (!root) { hide(); return; }
-    const bool anyDesk = GetClassNameW(root, cls, ARRAYSIZE(cls)) && IsAnyDeskClass(cls);
-    if (!anyDesk && !IsRdpInputWindow(under)) { hide(); return; }
+    const bool byRoot = GetClassNameW(root, cls, ARRAYSIZE(cls)) && (IsAnyDeskClass(cls) || IsRailClass(cls));
+    if (!byRoot && !IsRdpInputWindow(under)) { hide(); return; }
     if (filter_ && !filter_(root)) { hide(); return; }
 
     const UINT dpi = DpiAt(pt);

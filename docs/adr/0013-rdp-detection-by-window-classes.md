@@ -68,3 +68,20 @@ established:
   mouse is not over a session (a connection manager's tree view).
 - **Cache the class check per window handle**: not needed at three `GetClassName`
   calls per event, and a handle reused by a new window could return a stale answer.
+
+## Amendment: RemoteApp windows (RAIL)
+
+Measured against WSLg (`msrdc.exe` 1.2.7214, WSLg 1.0.79): in RemoteApp mode the
+control shows no desktop. Every window of the remote program is a **top-level window
+of class `RAIL_WINDOW` with no child windows**, and the remote cursor is set on it
+directly. The `IHWindowClass` chain does exist in the host process, but inside a
+hidden `TscShellContainerClass` window, so rule 1 never fires over a WSLg window and
+rule 2 finds no visible top-level window to list. The "verified" claim for WSLg in the
+context above held only for the cursor mechanism, not for the window structure.
+
+Decision: a visible top-level window of class `RAIL_WINDOW` (exact, case-sensitive)
+is an RDP window too. The overlay accepts it by its root class, like an AnyDesk
+window; the engine lists it by its class alone, without searching its children, and
+drops it only when it is destroyed. Everything else (zoom, per-program switch, no
+setting of its own) is unchanged. The class name is, like the others, an undocumented
+detail of the control; a change would only switch the overlay off over such windows.

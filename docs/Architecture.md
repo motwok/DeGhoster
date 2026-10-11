@@ -26,7 +26,7 @@ flowchart TB
     end
 
     AnyDesk["AnyDesk client (x86)<br/>session window ad_win"]
-    Rdp["RDP host (mstsc, msrdc, ...)<br/>RDP control, input window IHWindowClass"]
+    Rdp["RDP host (mstsc, msrdc, ...)<br/>RDP control, input window IHWindowClass<br/>or RemoteApp window RAIL_WINDOW"]
 
     Helper64["DeGhoster.Helper64.exe (x64)"]
     Helper32["DeGhoster.Helper32.exe (x86)"]
@@ -124,11 +124,15 @@ tracked as one of three kinds (`FixInfo::Kind`):
   (`EnumChildWindows`) — only at startup, when a top-level window is shown and in
   `trackCursorWindow`, never on the one-second sweep. The search on `SHOW` is what
   catches mstsc, which creates the control while its window is still hidden.
-  Treated like an AnyDesk window otherwise.
+  A **RemoteApp window** is the same case found differently: in RemoteApp mode the
+  control shows each window of the remote program as a top-level window of class
+  `RAIL_WINDOW` with no children (WSLg), so the class alone qualifies a visible
+  top-level window, with no search. Treated like an AnyDesk window otherwise.
 
 The one-second `tick()` drops a window only when it is destroyed or, for a ghost,
 stops meeting the ghost criteria, or, for an RDP window, no longer holds an RDP
-control (a connection manager whose last session was closed). Visibility and position are deliberately not
+control (a connection manager whose last session was closed; a RemoteApp window
+never holds one and is dropped only when destroyed). Visibility and position are deliberately not
 among them: a ghost its app hid (minimized) stays tracked and neutralized, marked
 `hidden` and drawn greyed out in the list, until it is destroyed. Minimizing
 WhatsApp also parks its ghost at -32000,-32000, off every screen, so the on-screen
@@ -229,7 +233,7 @@ sequenceDiagram
     participant V as Overlay window
     W->>O: WinEvent OBJID_CURSOR (location / name / show / hide)
     O->>W: GetCursorInfo, GetCursorPos, WindowFromPoint, GetClassName
-    alt global on, cursor showing, root class ad_win or RDP input window, not a system cursor, that window switched on
+    alt global on, cursor showing, root class ad_win or RAIL_WINDOW or RDP input window, not a system cursor, that window switched on
         opt handle, zoom or monitor DPI changed (always on a name change)
             O->>I: Read(cursor, dpi) and Scale(image, zoom)
             I-->>O: premultiplied ARGB + scaled hotspot
@@ -254,7 +258,8 @@ sequenceDiagram
   with `MagShowSystemCursor`, but is cleared when someone else hides it (the Windows
   Magnifier's full-screen mode), so the flag can be required unconditionally. The
   root window under the cursor must have the class `ad_win` (compared up to the first
-  `#`), or the window under the cursor must be an RDP input window (`IHWindowClass`,
+  `#`) or `RAIL_WINDOW` (a RemoteApp window, exact), or the window under the cursor
+  must be an RDP input window (`IHWindowClass`,
   parent `UIContainerClass`, grandparent `UIMainClass`, walked with
   `GetAncestor(GA_PARENT)`: three `GetClassName` calls, no cache needed), and the
   cursor must not be one of the `LoadCursor(NULL, IDC_*)` handles. Either way the

@@ -443,7 +443,7 @@ the host's bitness. It covers every program that embeds the control, for example
 | Program | Host executable | Control | Verified |
 |---|---|---|---|
 | Remote Desktop Connection | `mstsc.exe` | `mstscax.dll` | yes |
-| WSLg (graphical Linux apps under WSL) | `msrdc.exe` (in `C:\Program Files\WSL`) | `rdclientax.dll` | yes |
+| WSLg (graphical Linux apps under WSL) | `msrdc.exe` (in `C:\Program Files\WSL`) | `rdclientax.dll`, RemoteApp windows (below) | yes |
 | Hyper-V Virtual Machine Connection | `vmconnect.exe` | `mstscax.dll` | no |
 | Remote Desktop Connection Manager (Sysinternals) | `RDCMan.exe` | `mstscax.dll` | no |
 | mRemoteNG | `mRemoteNG.exe` | `mstscax.dll` | no |
@@ -451,6 +451,28 @@ the host's bitness. It covers every program that embeds the control, for example
 "Verified" means tested against the real program; the others embed the same control
 and are expected to work unchanged. Clients with their own RDP implementation (e.g.
 FreeRDP-based ones) are not covered.
+
+**RemoteApp windows.** In RemoteApp mode (RAIL) the control shows no remote desktop:
+every window of the remote program becomes a top-level window of its own on the
+client, class **`RAIL_WINDOW`**, with **no child windows**. The remote cursor is set
+on that window directly. The control's input window chain still exists in the host
+process, but inside a hidden container window, so it leads to no visible window.
+WSLg shows every graphical Linux app this way (host `msrdc.exe`):
+
+```mermaid
+flowchart TD
+    subgraph msrdc.exe
+        Rail1["RAIL_WINDOW<br/>one per remote program window<br/>remote cursor set here, no children"]
+        Rail2["RAIL_WINDOW<br/>..."]
+        Hidden["TscShellContainerClass 'RemoteApp' (hidden)"] --> Ax2["ActiveX host windows"] --> Main2[UIMainClass] --> Cont2[UIContainerClass] --> IH2[IHWindowClass]
+    end
+```
+
+Activation step 3 therefore also accepts a window whose **root** has the class
+`RAIL_WINDOW` (exact, case-sensitive), like an AnyDesk window, and such a visible
+top-level window is listed as an RDP window by its class alone, without searching its
+children. It leaves the list only when it is destroyed; the hidden container is not
+listed.
 
 **RDP windows are cases like AnyDesk windows.** Listed is the **visible top-level
 window** of the program hosting a control (for mstsc the session window, titled
@@ -460,7 +482,8 @@ input window is created inside a visible window, when a window with a control is
 shown (mstsc creates the control while its window is still hidden behind the
 connection dialog, which is therefore not listed), at startup, and when the cursor
 reaches it first. It leaves the list when it is destroyed or no longer holds a control
-(a connection manager whose last session was closed). AnyDesk and RDP windows belong
+(a connection manager whose last session was closed; a RemoteApp window never holds
+one and leaves only when destroyed). AnyDesk and RDP windows belong
 to different programs, so switching one off never touches the other.
 
 Everything else — zoom (Auto per window, or the fixed zoom), reading and scaling the
