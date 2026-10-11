@@ -477,6 +477,46 @@ public class CursorOverlayTests
         }
     }
 
+    // ---- RemoteApp windows (WSLg) ---------------------------------------------------
+
+    // In RemoteApp mode the control shows each window of the remote program as a
+    // top-level window of this class, with no input window below it: the remote
+    // cursor is set on the RAIL window itself. The simulator's AnyDesk mode (one
+    // window that sets its own cursors) plays that with this class.
+    private const string RailClass = "RAIL_WINDOW";
+
+    [SkippableTheory]
+
+    [Trait("Category", "InteractiveInput")]
+    [InlineData("64")]
+    [InlineData("32")]
+    public void Rail_overlay_shows_over_a_RemoteApp_window(string bits)
+    {
+        using var run = Run.Start(bits, "alpha", zoom: 300, cls: RailClass);
+        var (x, y) = run.MoveInside();
+        IntPtr ov = run.WaitOverlay();
+        AssertRect(ov, x - 6, y - 9, 48, 72);   // 16x24, hotspot (2,3), all x3
+
+        int before = run.Sim.Clicks();
+        ClickAt(x, y);
+        Assert.True(WaitUntil(() => run.Sim.Clicks() == before + 1, TimeSpan.FromSeconds(3)),
+                    "the click did not reach the RemoteApp window under the overlay");
+    }
+
+    [Fact]
+    public void Rail_windows_are_listed_and_counted()
+    {
+        using var run = Run.Start("64", "alpha", zoom: 300, needCursor: false, cls: RailClass);
+        Assert.True(WaitUntil(() => Count(run.Host) >= 1, TimeSpan.FromSeconds(5)), "the RemoteApp window was not counted");
+        int with = StableCount(run.Host);
+
+        using (Sim.Start("32", "alpha", RailClass, SimX + SimW + 20, SimY, 200, 200))
+            Assert.True(WaitUntil(() => Count(run.Host) == with + 1, TimeSpan.FromSeconds(5)),
+                        "a second RemoteApp window was not counted as a window of its own");
+        Assert.True(WaitUntil(() => Count(run.Host) == with, TimeSpan.FromSeconds(5)),
+                    $"a closed RemoteApp window was not dropped from the count ({with} -> {Count(run.Host)})");
+    }
+
     private const uint LVM_GETNEXTITEM = 0x100C;
     private const int LVNI_SELECTED = 0x0002;
 
@@ -629,9 +669,11 @@ public class CursorOverlayTests
         public IntPtr Host;
 
         // `zoom` is a fixed zoom (Auto off); null leaves Auto on, the default.
-        // `rdp` makes the simulator a program hosting the RDP control (see Sim).
+        // `rdp` makes the simulator a program hosting the RDP control (see Sim);
+        // `cls` is the session window's class otherwise (AnyDesk's by default).
         public static Run Start(string bits, string kind, int? zoom, bool needCursor = true,
-                                Dictionary<string, string>? env = null, string? rdp = null)
+                                Dictionary<string, string>? env = null, string? rdp = null,
+                                string? cls = null)
         {
             SetThreadDpiAwarenessContext(new IntPtr(-4));   // physical pixels, like DeGhoster
             var r = new Run { Build = FindBuildDir() };
@@ -644,7 +686,7 @@ public class CursorOverlayTests
             try
             {
                 r.Sim = rdp == null
-                    ? Sim.Start(bits, kind, "ad_win#1", SimX, SimY, SimW, SimH)
+                    ? Sim.Start(bits, kind, cls ?? "ad_win#1", SimX, SimY, SimW, SimH)
                     : Sim.Start(bits, kind, RdpHostClass, SimX, SimY, SimW, SimH, rdp);
                 var psi = new ProcessStartInfo(Path.Combine(r.Build, "DeGhoster.exe"), "--taskbar")
                           { UseShellExecute = false, WorkingDirectory = r.Build };

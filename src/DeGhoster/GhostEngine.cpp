@@ -89,15 +89,19 @@ bool HasRdpInput(HWND top)
 }
 
 // The third case: the visible top-level window of a program that hosts the RDP
-// control. `h` is either the control's input window itself (it is being created,
-// or the cursor is over it) or, with `deep`, a top-level window to search.
-// Nothing is injected into it either. Null if `h` leads to no such window.
+// control, or a visible RemoteApp window. `h` is either the control's input
+// window itself (it is being created, or the cursor is over it), a RemoteApp
+// window (class RAIL_WINDOW: the control shows each window of the remote program
+// as a top-level window of its own, with no input window below it, so the class
+// alone tells) or, with `deep`, a top-level window to search. Nothing is injected
+// into it either. Null if `h` leads to no such window.
 HWND RdpWindow(HWND h, bool deep)
 {
     if (CursorOverlay::IsRdpInputWindow(h)) {
         HWND root = GetAncestor(h, GA_ROOT);
         return root && IsWindowVisible(root) ? root : nullptr;
     }
+    if (CursorOverlay::IsRailWindow(h) && IsWindowVisible(h)) return h;
     if (deep && IsWindowVisible(h) && GetAncestor(h, GA_ROOT) == h && HasRdpInput(h)) return h;
     return nullptr;
 }
@@ -354,14 +358,15 @@ void GhostEngine::tick()
     // Visibility is not part of it: a ghost its app hid stays listed (marked
     // hidden) until it is destroyed. An AnyDesk window only ends by going away; an
     // RDP window also when its program closes the last RDP control in it (a
-    // connection manager whose sessions are all closed).
+    // connection manager whose sessions are all closed); a RemoteApp window never
+    // holds one and ends by going away too.
     std::vector<HWND> stale, idle, live;
     for (auto& kv : tracked_) {
         HWND h = kv.first;
         const bool ghost = kv.second.kind == FixInfo::Kind::Ghost;
         const bool rdp = kv.second.kind == FixInfo::Kind::Rdp;
         if (!IsWindow(h) || (ghost && !IsBlocker(h, /*ignoreCloak*/ true, /*ignoreVisible*/ true)) ||
-            (rdp && !HasRdpInput(h))) {
+            (rdp && !CursorOverlay::IsRailWindow(h) && !HasRdpInput(h))) {
             stale.push_back(h);
             continue;
         }

@@ -74,6 +74,14 @@ public:
     static bool IsRdpInputChain(const wchar_t* cls, const wchar_t* parent, const wchar_t* grandparent);
     // IsRdpInputChain for a live window and its two ancestors.
     static bool IsRdpInputWindow(HWND);
+    // True for the class of a RemoteApp window, "RAIL_WINDOW": in RemoteApp mode
+    // the RDP control shows each window of the remote program as a top-level
+    // window of its own, without the input window chain, and sets the remote
+    // cursor on it directly (WSLg shows Linux apps this way). Exact and
+    // case-sensitive; null does not match.
+    static bool IsRailClass(const wchar_t* cls);
+    // IsRailClass for a live top-level window; a child window never matches.
+    static bool IsRailWindow(HWND);
 
 private:
     static void CALLBACK OnWinEvent(HWINEVENTHOOK, DWORD event, HWND, LONG idObject,

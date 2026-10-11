@@ -200,7 +200,8 @@ and should work just the same. Remote desktop programs with their own technique 
 ones based on FreeRDP) are not covered.
 
 Every Remote Desktop window appears in the status window's list with its own **eye**, on by
-default, like an AnyDesk window. Switching it off affects only that program's windows;
+default, like an AnyDesk window. WSLg shows each Linux app as a window of its own, and each
+of them is listed. Switching one off affects only that program's windows;
 AnyDesk keeps its enlarged cursor, and the other way round.
 
 ## The Settings button

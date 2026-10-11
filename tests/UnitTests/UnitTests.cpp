@@ -276,6 +276,13 @@ static void RdpClassTests()
     Check(!CursorOverlay::IsRdpInputChain(L"IHWindowClass", L"UIContainerClass", nullptr),
           "a missing grandparent does not match");
     Check(!CursorOverlay::IsRdpInputChain(nullptr, nullptr, nullptr), "null does not match");
+
+    Check(CursorOverlay::IsRailClass(L"RAIL_WINDOW"), "the RemoteApp window class matches");
+    Check(!CursorOverlay::IsRailClass(L"rail_window"), "the RAIL match is case-sensitive");
+    Check(!CursorOverlay::IsRailClass(L"RAIL_WINDOW#1"), "a RAIL suffix does not match");
+    Check(!CursorOverlay::IsRailClass(L"TscShellContainerClass"), "the control's container is no RemoteApp window");
+    Check(!CursorOverlay::IsRailClass(L""), "empty is no RemoteApp window");
+    Check(!CursorOverlay::IsRailClass(nullptr), "null is no RemoteApp window");
 }
 
 static HCURSOR MakeCursor(int w, int h, const uint32_t* argb, const BYTE* andBits, POINT hot, bool mono)
@@ -864,6 +871,25 @@ static void GhostEngineTests()
     Check(eng.trackCursorWindow(bad1) == nullptr, "the parents in another order are no RDP control");
     Check(eng.trackCursorWindow(bad2) == nullptr, "an input window without its container is no RDP control");
 
+    // A RemoteApp window (WSLg): a top-level window of class RAIL_WINDOW with no
+    // control below it. Listed once shown, kept without an input window.
+    HWND rail = MakeTopLevel(L"RAIL_WINDOW", L"HexChat (Debian)", 0);
+    HWND railChild = MakeChain(rail, { L"DeGhosterTest_RailChild" });
+    Check(CursorOverlay::IsRailWindow(rail), "a top-level RAIL_WINDOW is a RemoteApp window");
+    Check(!CursorOverlay::IsRailWindow(railChild) && !CursorOverlay::IsRailWindow(rdp) &&
+          !CursorOverlay::IsRailWindow(nullptr), "a child of it, another class or null is not");
+    Check(eng.trackCursorWindow(rail) == nullptr && !t.count(rail), "a hidden RemoteApp window is not listed");
+    ShowWindow(rail, SW_SHOWNA);
+    const FixInfo* frl = eng.trackCursorWindow(rail);
+    Check(frl && frl->kind == FixInfo::Kind::Rdp && t.count(rail), "a shown RemoteApp window is listed as an RDP case");
+    Check(t.count(rail) && t.count(ad2) && t.at(rail).disableKey() == t.at(ad2).disableKey(),
+          "a RemoteApp window is switched per program like every other case");
+    eng.tick();
+    Check(t.count(rail), "a RemoteApp window stays listed although it holds no RDP control");
+    DestroyWindow(rail);
+    eng.tick();
+    Check(!t.count(rail), "a destroyed RemoteApp window leaves the list");
+
     // A connection manager closing its last session keeps its window, which is
     // then no RDP window any more.
     DestroyWindow(rdpMain);
@@ -952,7 +978,8 @@ static void CursorOverlayTests()
     HWND under = WindowFromPoint(pt);
     wchar_t rootCls[64] = L"";
     if (under) GetClassNameW(GetAncestor(under, GA_ROOT), rootCls, 64);
-    if (!CursorOverlay::IsRdpInputWindow(under) && !CursorOverlay::IsAnyDeskClass(rootCls))
+    if (!CursorOverlay::IsRdpInputWindow(under) && !CursorOverlay::IsAnyDeskClass(rootCls) &&
+        !CursorOverlay::IsRailClass(rootCls))
         Check(!ov.visible(), "enabled but not over a session: hidden");
     ov.setSessionLocked(true);
     Check(!ov.visible(), "locked: hidden");
